@@ -5,7 +5,9 @@ from numpy.random import default_rng
 import matplotlib
 import matplotlib.pyplot as plt
 
+
 matplotlib.use('QtAgg')
+
 
 # I don't know anything about the statistical properties of normal
 # distributions, so we'll stick to two dimensions at first. When changing the
@@ -19,7 +21,6 @@ def split_xy(data):
 
 
 def generate_data(rng, ntraining, ntesting):
-    # We'll make two clusters.
     n = (ntraining + ntesting + 1) // 2
     a = rng.standard_normal(size=(n, NDIMS))
     b = 8.0 + rng.standard_normal(size=(n, NDIMS))
@@ -37,7 +38,8 @@ def sigmoid(v):
 
 
 class DenseLayer:
-    """ A dense layer of perceptrons. """
+    """ A dense layer of perceptrons, like tensorflow.keras.layers.Dense. """
+
     def __init__(self, rng, shape):
         num_inputs, num_outputs = shape
         # I can't believe backpropagation will work without randomized initial
@@ -49,13 +51,33 @@ class DenseLayer:
         return sigmoid(data @ self.weights + self.b)
 
     def accuracy(self, x, y):
+        """Percentage of the examples in x where we correctly predict y.
+
+        Each point is counted as either right or wrong.
+        """
         yh = self(x)
         return np.mean((yh < 1/2) == (y < 1/2))
 
-    def loss(self, yh, y):
+    def loss(self, x, y):
+        yh = self(x)
         return np.mean(-np.log(yh ** y * (1 - yh) ** (1 - y)))
 
     def train(self, x, y, learn_rate):
+        db, dw = self.derivatives(x, y)
+        self.b -= learn_rate * db
+        self.weights -= learn_rate * dw
+
+    def derivatives(self, x, y):
+        """Return the partial derivatives ∂L/∂b and ∂L/∂w.
+
+        That is, return a characterazation of how tweaking each parameter of
+        the model would affect the loss.
+
+        Returns two arrays: the first, ∂L/∂b, is an array the same size as
+        self.b, and each element tells the partial derivative of the loss with
+        respect to the corresponding element of b.
+        """
+
         # TODO: this code does not follow the conventions in the video course:
         # the linear combination should be called z (not m), and should be a
         # column vector, not a row vector. Also the weights are called w.
@@ -67,11 +89,16 @@ class DenseLayer:
         m = x @ self.weights + self.b
         assert m.shape == (n, no)
         yh = sigmoid(m)
+        if not np.all(np.isfinite(yh)):
+            raise ValueError("non-finite output")
         assert yh.shape == (n, no)
         err = yh ** y * (1 - yh) ** (1 - y)
         loss = np.mean(-np.log(err))  # scalar
-        print("loss:", loss)
+        ##print("loss:", loss)
+        if not np.isfinite(loss):
+            raise ValueError("non-finite loss")
 
+        # Following the convention, for ∂L/∂x we write `dx`.
         derr = 1 / len(x) * -1 / err
         assert derr.shape == (n, no)
         dyh = derr * (2 * y - 1)
@@ -83,44 +110,44 @@ class DenseLayer:
         dw = x.T @ dyh
         assert dw.shape == (ni, no)
 
-        self.b -= learn_rate * db
-        self.weights -= learn_rate * dw
+        return db, dw
 
 
-rng = default_rng()
-(x_train, y_train), (x_test, y_test) = generate_data(rng, 8000, 1000)
-layer = DenseLayer(rng, (2, 1))
+def main():
+    rng = default_rng()
+    (x_train, y_train), (x_test, y_test) = generate_data(rng, 800, 100)
+    layer = DenseLayer(rng, (2, 1))
 
-def graph(i, out):
-    plt.subplot(2, 5, i + 1)
-    plt.scatter(
-        x=x_train[:,0],
-        y=x_train[:,1],
-        c=out,
-        #['red' if y_train[i,0] < 1/2 else 'blue'
-        #   for i in range(len(y_train))]
-    )
-    bad_points = x_train[(out[:,0] < 1/2) != (y_train[:,0] < 1/2),:]
-    plt.scatter(
-        x=bad_points[:,0],
-        y=bad_points[:,1],
-        c='red',
-        s=8,
-    )
+    def graph(i, out):
+        plt.subplot(2, 5, i + 1)
+        plt.scatter(
+            x=x_train[:,0],
+            y=x_train[:,1],
+            c=out, # color is the output of the network
+        )
+        # superimpose the points we mispredict in red
+        err_points = x_train[(out[:,0] < 1/2) != (y_train[:,0] < 1/2),:]
+        plt.scatter(
+            x=err_points[:,0],
+            y=err_points[:,1],
+            c='red',
+            s=8,
+        )
 
-plt.figure()
-N = 4500
-for i in range(N):
-    if i % 500 == 0:
-        graph(i // 500, layer(x_train))
-    layer.train(x_train, y_train, 0.03 + i / N * 0.15)
-    acc = layer.accuracy(x_test, y_test)
-    print("accuracy:", acc)
-    if acc > 0.999:
-        break
-graph(9, layer(x_train))
-plt.show()
+    plt.figure()
+    MOD = 500
+    N = 9 * MOD
+    for i in range(N):
+        if i % MOD == 0:
+            graph(i // MOD, layer(x_train))
+        learn_rate = 0.03 + i / N * 0.15  # total heuristic hack <3
+        layer.train(x_train, y_train, learn_rate)
+        acc = layer.accuracy(x_test, y_test)
+        print("accuracy:", acc)
+        if acc > 0.999:
+            break
+    graph(9, layer(x_train))
+    plt.show()
 
 
-
-
+main()

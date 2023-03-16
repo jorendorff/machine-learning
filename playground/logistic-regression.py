@@ -16,11 +16,13 @@ matplotlib.use('QtAgg')
 NDIMS = 2
 
 
-def split_xy(data):
-    return data[:,:-1], data[:,-1:]
-
-
 def generate_data(rng, ntraining, ntesting):
+    """Generate some data. You can ignore this. I'm sure this can be done less clumsily.
+
+    Returns ((train_x, train_y), (test_x, test_y)) where both _x values are
+    arrays with n rows and 2 columns; and both _y values are arrays with n rows
+    and 1 column that's either 0 or 1.
+    """
     n = (ntraining + ntesting + 1) // 2
     a = rng.standard_normal(size=(n, NDIMS))
     b = 8.0 + rng.standard_normal(size=(n, NDIMS))
@@ -30,6 +32,9 @@ def generate_data(rng, ntraining, ntesting):
 
     points = np.r_[a, b]
     rng.shuffle(points)
+
+    def split_xy(data):
+        return data[:,:-1], data[:,-1:]
     return split_xy(points[:ntraining]), split_xy(points[ntraining:ntraining + ntesting])
 
 
@@ -59,8 +64,11 @@ class DenseLayer:
         return np.mean((yh < 1/2) == (y < 1/2))
 
     def loss(self, x, y):
+        """ The loss function is what training seeks to minimize. """
+        # Not to say it actually works.
         yh = self(x)
-        return np.mean(-np.log(yh ** y * (1 - yh) ** (1 - y)))
+        err = yh ** y * (1 - yh) ** (1 - y)
+        return np.mean(-np.log(err))
 
     def train(self, x, y, learn_rate):
         db, dw = self.derivatives(x, y)
@@ -94,7 +102,7 @@ class DenseLayer:
         assert yh.shape == (n, no)
         err = yh ** y * (1 - yh) ** (1 - y)
         loss = np.mean(-np.log(err))  # scalar
-        ##print("loss:", loss)
+        ## print("loss:", loss)
         if not np.isfinite(loss):
             raise ValueError("non-finite loss")
 
@@ -135,17 +143,26 @@ def main():
         )
 
     plt.figure()
-    MOD = 500
+    MOD = 1000
     N = 9 * MOD
     for i in range(N):
         if i % MOD == 0:
             graph(i // MOD, layer(x_train))
-        learn_rate = 0.03 + i / N * 0.15  # total heuristic hack <3
+        learn_rate = 0.05
         layer.train(x_train, y_train, learn_rate)
-        acc = layer.accuracy(x_test, y_test)
-        print("accuracy:", acc)
-        if acc > 0.999:
-            break
+
+        ## # print some facts about what the model is actually doing
+        ## [[dzdx], [dzdy]] = layer.weights
+        ## import math
+        ## a = 180/math.pi * math.atan2(dzdy, dzdx)
+        ## print("angle =", a) # there's no reason this shouldn't be 45
+        ## r = -layer.b[0,0] / math.sqrt(dzdx ** 2 + dzdy ** 2)
+        ## print("r =", r)  # and this should be 4
+
+        ## print("accuracy (training data):", layer.accuracy(x_train, y_train))
+        ## print("accuracy (test data):", layer.accuracy(x_test, y_test))
+        if layer.loss(x_test, y_test) < 0.02:
+            break  # eh, good enough
     graph(9, layer(x_train))
     plt.show()
 

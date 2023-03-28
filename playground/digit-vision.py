@@ -56,25 +56,13 @@ class LinearLayer(Layer):
         no, ni = self.w.shape
         return no * (ni + 1)
 
-    def get_param(self, i):
-        no, ni = self.w.shape
-        if i < no * ni:
-            return self.w[i // ni, i % ni]
-        else:
-            return self.b[i - no * ni, 0]
-
-    def set_param(self, i, val):
-        no, ni = self.w.shape
-        if i < no * ni:
-            self.w[i // ni, i % ni] = val
-        else:
-            self.b[i - no * ni, 0] = val
-
     def apply(self, x):
         return self.w @ x + self.b
 
-    def derivatives(self, x, dz):
-        """Given x and ∂L/∂z at x, return the partial derivatives (∂L/∂x, (∂L/∂w, ∂L/∂b)).
+    def derivatives(self, x, dz, out):
+        """Given x and ∂L/∂z at x, compute partial derivatives ∂L/∂x, ∂L/∂w, and ∂L/∂b.
+
+        Store ∂L/∂w and ∂L/∂b in `out`, a 1D vector of parameters. Return ∂L/∂x.
 
         Backpropagation.
 
@@ -92,15 +80,19 @@ class LinearLayer(Layer):
         assert db.shape == (no, 1)
         dw = dz @ x.T
         assert dw.shape == (no, ni)
+        out[:no * ni] = dw.ravel()
+        out[no * ni:] = db.ravel()
 
         dx = self.w.T @ dz
         assert dx.shape == x.shape
-        return dx, (dw, db)
+        return dx
 
     def learn(self, learning_rate, derivs):
-        dw, db = derivs
-        self.b -= learning_rate * db
+        no, ni = self.w.shape
+        dw = derivs[:no * ni].reshape((no, ni))
+        db = derivs[no * ni:].reshape((no, 1))
         self.w -= learning_rate * dw
+        self.b -= learning_rate * db
 
 
 class ActivationLayer(Layer):
@@ -108,8 +100,8 @@ class ActivationLayer(Layer):
     def apply(self, x):
         return self.f(x)
 
-    def derivatives(self, x, dz):
-        return (self.df(x) * dz, None)
+    def derivatives(self, x, dz, _out):
+        return self.df(x) * dz
 
     def learn(self, _learning_rate, _derivs):
         # No parameters to learn.
@@ -150,44 +142,32 @@ class Sequence(Layer):
     def len_params(self):
         return sum(l.len_params() for l in self.layers)
 
-    def get_param(self, i):
-        for layer in self.layers:
-            n = layer.len_params()
-            if i < n:
-                return layer.get_param(i)
-            i -= n
-        raise IndexError("parameter out of range")
-
-    def set_param(self, i, value):
-        for layer in self.layers:
-            n = layer.len_params()
-            if i < n:
-                return layer.set_param(i, value)
-            i -= n
-        raise IndexError("parameter out of range")
-
     def apply(self, x):
         for layer in self.layers:
             x = layer.apply(x)
         return x
 
-    def derivatives(self, x, dz):
+    def derivatives(self, x, dz, out):
         # redo all the work of apply :\
         values = []
         for layer in self.layers:
             values.append(x)
             x = layer.apply(x)
 
-        dparams = []
+        out_stop, = out.shape
         for layer, x in zip(reversed(self.layers), reversed(values)):
-            dz, dparams_i = layer.derivatives(x, dz)
-            dparams.append(dparams_i)
+            out_start = out_stop - layer.len_params()
+            dz = layer.derivatives(x, dz, out[out_start:out_stop])
+            out_stop = out_start
 
-        return dz, dparams[::-1]
+        return dz
 
     def learn(self, learning_rate, dparams):
-        for layer, dparams_i in zip(self.layers, dparams):
-            layer.learn(learning_rate, dparams_i)
+        i0 = 0
+        for layer in self.layers:
+            i1 = i0 + layer.len_params()
+            layer.learn(learning_rate, dparams[i0:i1])
+            i0 = i1
 
 
 class LogisticLoss:
@@ -208,8 +188,6 @@ class LogisticLoss:
 
 
 def unit_vector(v):
-    (dw, db), _ = v # HACK
-    v = np.array([dw[0][0], dw[0][1], db[0][0]], dtype=float) # HACK
     return v / np.linalg.norm(v)
 
 
@@ -222,22 +200,25 @@ class Model:
     def __init__(self, seq, loss):
         self.seq = seq
         self.loss = loss
+        self.learning_rate = 0.05
         self.last_gradient = None
 
-    def train(self, x_train, y_train, learning_rate):
+    def train(self, x_train, y_train):
         yh = self.seq.apply(x_train)
         loss = self.loss.loss(y_train, yh)
         print("loss:", loss)
         dyh = self.loss.deriv(y_train, yh)
-        _, dp = self.seq.derivatives(x_train, dyh)
+        dp = np.zeros((self.seq.len_params(),))
+        _ = self.seq.derivatives(x_train, dyh, dp)
         if self.last_gradient is not None:
             a = angle_between(self.last_gradient, dp)
             print("change in direction:", a)
             if a > math.pi/72:
-                learning_rate /= 1.01
-            else:
-                learning_rate *= 1.01
-        self.seq.learn(learning_rate, dp)
+                self.learning_rate /= 10
+            elif self.learning_rate < 10:
+                self.learning_rate *= 1.1
+        print("learning rate:", self.learning_rate)
+        self.seq.learn(self.learning_rate, dp)
         self.last_gradient = dp
 
 
@@ -291,7 +272,7 @@ class Model:
 
 def main():
     rng = default_rng()
-    (x_train, y_train), (x_test, y_test) = generate_data(rng, 100, 100)
+    (x_train, y_train), (x_test, y_test) = generate_data(rng, 800, 100)
 
     model = Model(
         Sequence([
@@ -316,8 +297,7 @@ def main():
     for i in range(NROUNDS):
         if i % decile == 0:
             graph(i // decile)
-        learn_rate = 0.05
-        model.train(x_train, y_train, learn_rate)
+        model.train(x_train, y_train)
 
         ## # print some facts about what the model is actually doing
         ## [[dzdx], [dzdy]] = layer.weights

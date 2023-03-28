@@ -781,5 +781,352 @@ Obvious.
 https://www.youtube.com/watch?v=4qJaSmvhxi8&list=PLkDaE6sCZn6Hn0vK8co82zjQtt3T2Nkqc&index=15
 
 
-## 
+## Understanding mini-batch gradient descent (C2W2L02)
 
+The main problem with a mini-batch size of 1 is not the noise, but that you
+lose the speedup from vectorization!
+
+Guidelines: if small training set, m ≤ 2000, just use batch gradient descent.
+
+Typical mini-batch sizes are powers of 2 from 64 = 2⁶ to 512 = 2⁹.
+
+Make sure your mini-batch fits in CPU/GPU memory.
+
+
+## Exponentially weighted averages (C2W2L03)
+
+Given a data series θ, produce a smoothed data series v:
+
+    v[t] = β v[t - 1] + (1 - β) θ[t]
+
+Very roughly speaking, it finds something like
+the average over the last `1 / (1 - β)` days.
+
+If β is 0.99, the weight of the latest data point is 1/100.
+
+
+## Understanding exponentially weighted averages (C2W2L04)
+
+It's a convolution.
+
+The reason it's like the average of the last `1/(1-β)` days is that
+
+    β ^ (1 / β)
+
+is an approximation of 1/e, less than a third.
+The most recent `1/(1-β)` days
+account for more than 2/3 of the current weighted average.
+
+
+## Bias correction of exponentially weighted averages (C2W2L05)
+
+Instead of taking v[t] from the recurrence relation above, use
+
+    v[t] / (1 - β^t)
+
+The denominator quickly goes to 1.
+
+
+## Gradient descent with momentum (C2W2L06)
+
+In a narrow valley, gradient descent may oscillate,
+because the step size is too big for that valley.
+
+The fix for this is to use a weighted average of momentum instead of the
+current gradient. That will push us in the right direction, maybe. It will tend
+to eliminate the movement up and down the steep walls of the valley without
+reducing movement in the direction of the river.
+
+The intuition is that this is "like" the partial derivatives are being used as
+"acceleration" terms, and the v[t] is the "velocity". Ball rolling downhill.
+The derivative imparts acceleration to this ball. β plays the role of friction,
+preventing the ball from accelerating without limit.
+
+    vdw := β vdw + (1 - β) dw
+    vdb := β vdb + (1 - β) db
+    w -= α vdw
+    b -= α vdb
+
+In practice β = 0.9 works well and bias correction is not worth it for this algorithm.
+
+It's common to omit the `1 - β` term, but this means if you change β you'd have
+effectively changed α (scaled your step size by the sum of an infinite series
+that turns out to be `1 / (1 - β)` a fairly large number); the formulation
+above keeps them uncoupled.
+
+This almost always works better than gradient descent.
+
+
+## RMSProp (C2W2L07)
+
+    sdw = β sdw + (1 - β) dw^2
+    w -= α (dw / sqrt(sdw + ε))
+
+This is just bizarre to me. Damps out movement in steep directions, but this is
+not what we want - is it?
+
+I guess all this is the distillation of practical wisdom on high-dimension
+gradient descent in general. It just seems bizarre that a smarter algorithm
+would not work better.
+
+Fun fact, RMSProp was first proposed in a Coursera course.
+
+
+## Adam optimization algorithm (C2W2L08)
+
+Adam = Adaptive moment estimation (vdw, mean of derivatives, is the first
+moment; sdw, mean of squares, is called the second moment)
+
+    vdw = 0
+    sdw = 0
+    for t, minibatch:
+        vdw = β1 vdw + (1 - β1) dw
+        sdw = β2 sdw + (1 - β2) dw^2
+        vdw_corrected = vdw / (1 - β1^t)
+        sdw_corrected = sdb / (1 - β2^t)
+        w -= α vdw / sqrt(sdw + ε)
+
+Hyperparameters:
+
+    α needs to be tuned.
+    β1 = 0.9
+    β2 = 0.999
+    ε = 10^-8 (doesn't matter much)
+
+
+## Learning rate decay (C2W2L09)
+
+1 epoch = 1 pass through the data. Good to know.
+
+One thing you can do is set
+
+    α = α₀ / (1 + decay_rate * epoch_num)
+
+New hyperparameter.
+
+Other formulas:
+
+    α = α₀ * 0.95 ^ epoch_num
+
+    α = α₀ * k / sqrt(epoch_num)
+
+Manual decay is also done sometimes! If your model trains over many days, you
+can just watch it get stuck and manually decrease α.
+
+Next week: systematic hyperparameter tuning
+
+
+## The problem of local optima (C2W3L10)
+
+This was misnumbered and belongs at the end of week 2.
+
+This repeats the part of what the survey paper said that makes sense, which is
+that almost all points of zero gradient are saddle points (not local minima).
+
+Sure. The intuition is that at any point with zero gradient, on each dimension,
+the second derivative is either positive or negative. The point is a local
+minimum only if all of them are positive. If any are negative, it's a saddle
+point. Knowing nothing more about our functions, saddle points have to be the
+more common case.
+
+
+## Tuning process (C2W3L01)
+
+α is the most important metaparameter to tune.
+
+Then β (if not using Adam), number of hidden units, and mini-batch size.
+
+Third, number of layers and learning rate decay.
+
+If using Adam, Ng never tunes β1, β2, or ε.
+
+Do not use a grid. Instead choose random points in the hyperparameter space.
+This way, worst case, you will have tried N different values for α! You can
+toss in lots of hyperparameters that do not matter much and that's fine.
+
+Another thing you can do is course-to-fine search. Zoom in after initial
+sampling of the space.
+
+
+## Using an appropriate scale (C2W3L02)
+
+Use a log scale for picking random values of α and other hyperparameters for
+which reasonable values span orders of magnitude.
+
+Likewise, for β, which might range from 0.9 to 0.999,
+instead pick a number from 0.001 to 0.1 on a log scale and set `β = 1 - that`.
+(irritating - this reveals that `1 - β` is the actual hyperparameter)
+
+## Hyperparameter tuning in practice (C2W3L03)
+
+Re-test your hyperparameters occasionally!
+
+Panda vs. caviar approach. If you have the CPUs, do caviar.
+
+## Normalizing activations in a network (C2W3L04)
+
+Batch normalization makes your training more robust to choice of
+hyperparameters.
+
+It works by adding up the values of z (or a) at each layer over a batch, then
+using that to compute the mean and variance of each of those values (what I
+think of as "signals"); then normalize (each signal separately);
+
+    z_norm = (z - μ) / sqrt(σ² + ε)     # ε term in case variance is zero
+
+and after this add a layer that does:
+
+    z~ = γ z_norm + β
+
+where this γ and β are learnable parameters of the model, and z~ is passed to
+the activation and downstream, instead of z.
+
+This way the model _may_ choose γ and β so as to undo the normalization if
+that's best. But as a default the output of each layer is normalized, to help
+the next layer have an easier time training.
+
+https://www.youtube.com/watch?v=AXDByU3D1hA&list=PLkDaE6sCZn6Hn0vK8co82zjQtt3T2Nkqc&index=25
+
+## Fitting batch norm into neural networks (C2W3L05)
+
+It gets rid of `b` of `(w, b)` fame, because the learnable mean parameter is
+the same thing but kind of better. `b` has no effect on the output, therefore
+the derivative of output with respect to b is 0, and we never learn anything
+for it.
+
+`β` and `γ` each have the same shape that `b` had.
+
+`tf.nn.batch_normalization`.
+
+Does this require larger mini-batches? It seems you could get unlucky and have
+an input go haywire just from bad luck.
+
+
+## Why does batch norm work? (C2W3L06)
+
+Nice insight: it makes later tiers of your neural net more robust to changes
+early in the net. Consider the perspective of a neuron in tier 3. Because
+earlier tiers are always learning and changing, the _meaning_ and _distribution_
+of the inputs to tier 3 are always changing. The neuron in tier 3 is suffering
+from covariate shift. The input is different now.
+
+With batch norm, at least the mean and variance will remain the same (unless
+some part of the network finds it valuable to change them!).
+
+There is a second effect: batch norm as regularization. Similar to dropout, it
+adds some noise to each hidden layer's output (because each mini-batch is
+scaled by its mean/variance which will be somewhat random). This forces
+downstream units not to be too dependent on any one upstream unit. This is a
+slight effect.
+
+A larger mini-batch size reduces this regularization effect.
+
+Don't turn to batch norm for regularization though.
+
+
+## Batch norm at test time (C2W3L07)
+
+Problem: when learning, batch norm works on one mini-batch at a time. When
+using the network in production, you might not have mini-batches! What then?
+
+Prediction: You're going to keep a weighted exponential average of μ and σ². It
+becomes part of your model, but not learned through gradient descent like
+everything else.
+
+Yup.
+
+This turns out to be pretty robust to how exactly you estimate μ and σ², so
+don't sweat that.
+
+
+## Softmax regression (C2W3L08)
+
+Hey, this is where we came in!
+
+Softmax is an activation function for the last layer. Unusual in that it is not
+a function of individual outputs but a function of all outputs.
+
+Suppose the last layer has 10 outputs, the 10 digits 0-9, and the output of the
+linear part of those neurons is z. z's shape is (10, n) where n is the mini-batch size.
+
+    t = exp(z)
+    a = t / sum(t) 
+
+This forces the elements of a to add up to 1 as desired.
+
+Pictures show what softmax can do -- very nice presentation.
+
+Why are the boundaries linear? Because these pictures do not show softmax
+probability values; rather, each pixel tells you which output has the greatest
+strength. But this is not softmax. It's max.
+
+
+## Training softmax classifier (C2W3L09)
+
+Explains why it's called "softmax".
+
+Will it be different from what I'm doing, using the loss function he gave me
+for logistic regression back in C1W2L18?
+
+Claims if C = 2, softmax reduces to logistic regression.
+
+    Loss(yh, y) = -sum(y[j] * log(yh[j]) for j in 0..C)
+
+When y is made up of zeros and ones,
+such that `y[j] = 1` and `y[k] = 0` where `k /= j`, 
+we get
+
+    Loss(yh, y) = -log(yh[j])
+
+so that only the value of yh[j] matters. I'm surprised. This is not what I was
+thinking of doing.
+
+Backprop is nice and easy in this case, because
+
+    dz = yh - y
+
+I don't see why that should be the case.
+
+
+## The problem of local optima (C2W3L10)
+
+See above at the end of C2W2.
+
+## TensorFlow (C2W3L11)
+
+```
+w = tf.Variable(0, dtype=tf.float32)
+cost = tf.add(tf.add(w**2, tf.multiply(-10., w)), 25)  # tensorflow knows how to take derivatives
+cost = w**2 - 10*w + 25  # tf has operator overloading of course
+train = tf.train.GradientDescentOptimizer(0.01).minimize(cost)
+
+init = tf.global_variables_initializer()
+
+# These lines of code are idiomatic
+with tf.Session() as session:
+    session.run(init)
+    print(session.run(w))
+
+session.run(train)
+print(session.run(w))
+
+for i in range(1000):
+    session.run(train)
+print(session.run(w))
+```
+
+```
+x = tf.placeholder(tf.float32, [3, 1])
+
+session.run(train, feed_dict={x: coefficients})
+```
+
+Not really following this part.
+
+## Lab
+
+-   Play around with Tensorflow
+-   Find Adam optimizer in Keras and how to specify the hyperparameters.
+-   Find Softmax in Keras and try to figure out how it conceptually fits in.
+-   My Keras demo is actually using `'softmax'` already.
+    What then is `'sparse_categorical_crossentropy'`?

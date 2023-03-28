@@ -8,12 +8,22 @@ class Layer:
 
 
 class FlattenLayer(Layer):
-    def apply(self, x):
+    """Reshape inputs to matrix form.
+
+    This layer takes inputs with example-index as the first axis and any number of other axes.
+    It reshapes and transposes the data into a 2D matrix where each column is one example.
+    """
+    def __init__(self, input_shape):
+        self.input_shape = input_shape
+
+    def apply(self, _params, x):
         n = x.shape[0]
-        return self.x.reshape((n, -1))
+        assert x.shape[1:] == self.input_shape
+        y = x.reshape((n, -1)).T
+        return y
 
     def derivatives(self, x, dz, _out):
-        return dz
+        return dz.reshape((-1,) + self.input_shape)
 
 
 class LinearLayer(Layer):
@@ -161,6 +171,14 @@ class LogisticLoss:
         no, n = y.shape
         assert no == 1
         return 1.0 / (n * np.where(y == 0, 1 - yh, -yh))
+
+
+class CategoryCrossEntropyLoss:
+    def loss(self, y, yh):
+        raise NotImplementedError
+
+    def deriv(self, y, yh):
+        raise NotImplementedError
 
 
 def unit_vector(v):

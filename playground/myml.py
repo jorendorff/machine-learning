@@ -3,29 +3,39 @@ import math
 
 
 class Layer:
-    def len_params(self):
+    def num_params(self):
         return 0
+
+
+class FlattenLayer(Layer):
+    def apply(self, x):
+        n = x.shape[0]
+        return self.x.reshape((n, -1))
+
+    def derivatives(self, x, dz, _out):
+        return dz
 
 
 class LinearLayer(Layer):
     """ A dense layer with a matrix of weights. """
-    
-    def __init__(self, rng, shape):
-        num_outputs, num_inputs = shape
-        self.w = 0.02 * rng.standard_normal(shape)
-        self.b = 0.02 * rng.standard_normal((num_outputs, 1))
 
-    def len_params(self):
-        no, ni = self.w.shape
+    def __init__(self, shape):
+        self.shape = shape
+
+    def num_params(self):
+        no, ni = self.shape
         return no * (ni + 1)
 
-    def apply(self, x):
-        return self.w @ x + self.b
+    def apply(self, params, x):
+        no, ni = self.shape
+        w = params[:no * ni].reshape((no, ni))
+        b = params[no * ni:].reshape((no, 1))
+        return w @ x + b
 
-    def derivatives(self, x, dz, out):
+    def derivatives(self, params, x, dz, out):
         """Given x and ∂L/∂z at x, compute partial derivatives ∂L/∂x, ∂L/∂w, and ∂L/∂b.
 
-        Store ∂L/∂w and ∂L/∂b in `out`, a 1D vector of parameters. Return ∂L/∂x.
+        Store ∂L/∂w and ∂L/∂b in `out`, a 1D vector of derivatives. Return ∂L/∂x.
 
         Backpropagation.
 
@@ -34,9 +44,11 @@ class LinearLayer(Layer):
         output r at training sample x[:,c].
         """
 
-        no, ni = self.w.shape # number of outputs, inputs
+        no, ni = self.shape # number of outputs, inputs
         n = x.shape[1] # number of training samples
         assert x.shape == (ni, n)
+
+        w = params[:no * ni].reshape((no, ni))
 
         assert dz.shape == (no, n)
         db = np.sum(dz, axis=1, keepdims=True)
@@ -46,29 +58,18 @@ class LinearLayer(Layer):
         out[:no * ni] = dw.ravel()
         out[no * ni:] = db.ravel()
 
-        dx = self.w.T @ dz
+        dx = w.T @ dz
         assert dx.shape == x.shape
         return dx
-
-    def learn(self, learning_rate, derivs):
-        no, ni = self.w.shape
-        dw = derivs[:no * ni].reshape((no, ni))
-        db = derivs[no * ni:].reshape((no, 1))
-        self.w -= learning_rate * dw
-        self.b -= learning_rate * db
 
 
 class ActivationLayer(Layer):
     """ Applies the same nonlinear activation function to all outputs. """
-    def apply(self, x):
+    def apply(self, _params, x):
         return self.f(x)
 
-    def derivatives(self, x, dz, _out):
+    def derivatives(self, _params, x, dz, _out):
         return self.df(x) * dz
-
-    def learn(self, _learning_rate, _derivs):
-        # No parameters to learn.
-        pass
 
 
 def sigmoid(v):
@@ -102,35 +103,47 @@ class Sequence(Layer):
     def __init__(self, layers):
         self.layers = layers
 
-    def len_params(self):
-        return sum(l.len_params() for l in self.layers)
+    def num_params(self):
+        return sum(l.num_params() for l in self.layers)
 
-    def apply(self, x):
+    def apply(self, params, x):
+        i0 = 0
         for layer in self.layers:
-            x = layer.apply(x)
+            i1 = i0 + layer.num_params()
+            x = layer.apply(params[i0:i1], x)
+            i0 = i1
         return x
 
-    def derivatives(self, x, dz, out):
+    def derivatives(self, params, x, dz, out):
         # redo all the work of apply :\
         values = []
+        i0 = 0
         for layer in self.layers:
             values.append(x)
-            x = layer.apply(x)
+            i1 = i0 + layer.num_params()
+            x = layer.apply(params[i0:i1], x)
+            i0 = i1
 
-        out_stop, = out.shape
+        i1, = out.shape
         for layer, x in zip(reversed(self.layers), reversed(values)):
-            out_start = out_stop - layer.len_params()
-            dz = layer.derivatives(x, dz, out[out_start:out_stop])
-            out_stop = out_start
+            i0 = i1 - layer.num_params()
+            dz = layer.derivatives(params[i0:i1], x, dz, out[i0:i1])
+            i1 = i0
 
         return dz
 
-    def learn(self, learning_rate, dparams):
-        i0 = 0
-        for layer in self.layers:
-            i1 = i0 + layer.len_params()
-            layer.learn(learning_rate, dparams[i0:i1])
-            i0 = i1
+
+class SoftmaxLayer(Layer):
+    def apply(self, _params, x):
+        return np.mean(np.exp(x), axis=0, keepdims=True)
+
+    def derivatives(self, x, dz, _out):
+        # We have dL/dz. We seek dL/dx = dL/dz * dz/dx,
+        # where dz/dx = d/dx (exp(x) / sum(exp(xi))).
+        # By the quotient rule this is = exp(x) * (sum(exp(xi)) - exp(x)) / sum(exp(xi)) ** 2
+        ex = np.exp(x)
+        sum_ex = np.sum(ex, axis=0, keepdims=True)
+        return dz * (ex * (sum_ex - ex) / sum_ex ** 2)
 
 
 class LogisticLoss:
@@ -159,20 +172,25 @@ def angle_between(u, v):
     v = unit_vector(v)
     return np.arccos(np.clip(np.dot(u, v), -1.0, 1.0))
 
+
 class Model:
-    def __init__(self, seq, loss):
+    def __init__(self, rng, seq, loss):
         self.seq = seq
+        self.params = 0.02 * rng.standard_normal((seq.num_params(),))
         self.loss = loss
         self.learning_rate = 0.05
         self.last_gradient = None
 
+    def apply(self, x):
+        return self.seq.apply(self.params, x)
+
     def train(self, x_train, y_train):
-        yh = self.seq.apply(x_train)
+        yh = self.seq.apply(self.params, x_train)
         loss = self.loss.loss(y_train, yh)
         print("loss:", loss)
         dyh = self.loss.deriv(y_train, yh)
-        dp = np.zeros((self.seq.len_params(),))
-        _ = self.seq.derivatives(x_train, dyh, dp)
+        dp = np.zeros((self.seq.num_params(),))
+        _ = self.seq.derivatives(self.params, x_train, dyh, dp)
         if self.last_gradient is not None:
             a = angle_between(self.last_gradient, dp)
             print("change in direction:", a)
@@ -181,5 +199,5 @@ class Model:
             elif self.learning_rate < 10:
                 self.learning_rate *= 1.1
         print("learning rate:", self.learning_rate)
-        self.seq.learn(self.learning_rate, dp)
+        self.params -= self.learning_rate * dp
         self.last_gradient = dp

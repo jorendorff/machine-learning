@@ -45,8 +45,9 @@ def main():
     (x_train, y_train), (x_test, y_test) = generate_data(rng, 800, 100)
 
     model = Model(
+        rng,
         Sequence([
-            LinearLayer(rng, (1, 2)),
+            LinearLayer((1, 2)),
             SigmoidLayer(),
         ]),
         LogisticLoss(),
@@ -54,7 +55,7 @@ def main():
 
     def graph(i):
         plt.subplot(2, 5, i + 1)
-        yh = model.seq.apply(x_train)
+        yh = model.apply(x_train)
         plt.scatter(x=x_train[0], y=x_train[1], c=yh)
         # superimpose the points we mispredict in red
         err_points = x_train[:, (yh[0] < 1/2) != (y_train[0] < 1/2)]

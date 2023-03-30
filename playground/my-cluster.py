@@ -27,7 +27,7 @@ def generate_data(rng, ntraining, ntesting):
     """
     n = (ntraining + ntesting + 1) // 2
     a = rng.standard_normal(size=(NDIMS, n))
-    b = 5.0 + rng.standard_normal(size=(NDIMS, n))
+    b = 3.0 + rng.standard_normal(size=(NDIMS, n))
 
     a = np.r_[a, np.zeros((1, n))]
     b = np.r_[b, 1 + np.zeros((1, n))]
@@ -53,20 +53,36 @@ def main():
         LogisticLoss(),
     )
 
-    def graph(i):
-        plt.subplot(2, 5, i + 1)
-        yh = model.apply(x_train)
-        plt.scatter(x=x_train[0], y=x_train[1], c=yh)
-        # superimpose the points we mispredict in red
-        err_points = x_train[:, (yh[0] < 1/2) != (y_train[0] < 1/2)]
-        plt.scatter(x=err_points[0], y=err_points[1], c='red', s=6)
+    fig, axs = plt.subplots(2, 5, subplot_kw={'projection': '3d'})
 
-    NROUNDS = 298
+    viridis = matplotlib.colormaps['viridis']
+    def graph(i):
+        if i > 0:
+            ax = axs.flat[i]
+            h = np.array(history, dtype=float)
+            for j in range(0, h.shape[0] - 1):
+                hj = h[j:j+2]
+                ax.plot(hj[:,0], hj[:,1], hj[:,2], color=viridis(h[j,3])) #color=h[:,3]
+
+        ## plt.subplot(2, 5, i + 1)
+        ## yh = model.apply(x_train)
+        ## plt.scatter(x=x_train[0], y=x_train[1], c=yh)
+        ## # superimpose the points we mispredict in red
+        ## err_points = x_train[:, (yh[0] < 1/2) != (y_train[0] < 1/2)]
+        ## plt.scatter(x=err_points[0], y=err_points[1], c='red', s=6)
+
+    history = []
+
+    NROUNDS = 100
     decile = (NROUNDS - 1) // 9
     for i in range(NROUNDS):
         if i % decile == 0:
             graph(i // decile)
         model.train(x_train, y_train)
+
+        wx, wy, b = model.last_params
+        loss = model.last_loss
+        history.append([wx, wy, b, loss])
 
         ## # print some facts about what the model is actually doing
         ## [[dzdx], [dzdy]] = layer.weights

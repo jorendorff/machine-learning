@@ -1130,3 +1130,190 @@ Not really following this part.
 -   Find Softmax in Keras and try to figure out how it conceptually fits in.
 -   My Keras demo is actually using `'softmax'` already.
     What then is `'sparse_categorical_crossentropy'`?
+    A: It's the loss function. After softmax it computes the entropy of the
+    correct answer with respect to our model's predictions. "Sparse" may
+    just refer to the distribution being discrete (10 outcomes).
+
+## `C1_W4_Lab_1_image_generator_no_validation.ipynb`
+
+from the coursera course "Introduction to TensorFlow for Artificial
+Intelligence, Machine Learning, and..." from DeepLearning.AI, here:
+https://www.coursera.org/learn/introduction-tensorflow/home/week/4
+
+Since this will be on the test:
+
+```
+!wget <URL>
+```
+
+This appears to be a normal code cell. Then normal python stuff works on the
+VM's filesystem.
+
+```
+import zipfile
+
+# Unzip the dataset
+local_zip = './horse-or-human.zip'
+zip_ref = zipfile.ZipFile(local_zip, 'r')
+zip_ref.extractall('./horse-or-human')
+zip_ref.close()
+```
+
+```
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# All images will be rescaled by 1./255
+train_datagen = ImageDataGenerator(rescale=1/255)
+
+# Flow training images in batches of 128 using train_datagen generator
+train_generator = train_datagen.flow_from_directory(
+        './horse-or-human/',  # This is the source directory for training images
+        target_size=(300, 300),  # All images will be resized to 300x300
+        batch_size=128,
+        # Since we use binary_crossentropy loss, we need binary labels
+        class_mode='binary')
+```
+
+> Deprecated: `tf.keras.preprocessing.image.ImageDataGenerator` is not
+> recommended for new code. Prefer loading images with
+> `tf.keras.utils.image_dataset_from_directory` and transforming the output
+> `tf.data.Dataset` with preprocessing layers. For more information, see the
+> tutorials for loading images and augmenting images, as well as the
+> preprocessing layer guide.
+
+OK, so the new thing would be like
+
+```
+from tensorflow.keras.utils import image_dataset_from_directory
+
+ds = dataset_from_directory(
+    "./horse-or-human",
+    label_mode='binary',
+    batch_size=128,
+    image_size=(300, 300),
+)
+```
+
+and `model.fit` needs a new `steps_per_epoch=8` argument to limit the epoch to
+the approximate size of the data we have, because the dataset is basically
+going to generate an infinite stream of images, from `model.fit`'s perspective.
+
+## `C1_W4_Lab_2_image_generator_with_validation.ipynb`
+
+```
+history = model.fit(
+    ...
+    validation_data=validation_generator,
+    validation_steps=8
+)
+```
+
+## `C1_W4_Lab_3_compacted_images.ipynb`
+
+-   Did we lose quality at all? If so, it should be reflected in the validation
+    scores.
+
+-   Did we lose quality because the information content in the shrunk images is
+    less, or because we skipped a bunch of convolution layers? Or some other
+    reason?
+
+I immediately switched to adam since it seems to give better results.
+
+I choose as my metric the second-best validation score in epoch 5 or later.
+
+1.  With three convolutional layers, we barely break 80% on validation data,
+    even though training accuracy goes to 99.9%. Metric: 80.86%.
+
+    18496 inputs to the final dense layers.
+    9,494,561 params.
+
+2.  With a fourth convolutional layer: 87.89%, and validation accuracy was over
+    80% consistently.
+
+    3136 inputs to the final dense layers.
+    1,667,169 params.
+
+3.  With the fifth convolutional layer: 83.59%. I ran it again. 84.38%. Maybe
+    this architecture is just worse -- the last pooling layer reduces the
+    resolution to 2x2.
+
+    256 inputs to the final dense layers.
+    229,537 params.
+
+4.  With the fifth convolutional layer, but no fifth pooling layer: 86.72%.
+
+    1600 inputs to the final dense layers.
+    917,665 params.
+
+5.  For a lark, I went back to the notebook that used 300x300 images, switched
+    to adam, and did a training run there. The number of params and CNN outputs
+    is very similar to case 2 above, the best-performing of the bunch. 82.81%.
+
+    3136 inputs to the final dense layers.
+    1,704,097 params.
+
+Switching to 150x150 images is good actually. We can save a lot of work by
+doing the math on fewer pixels, and the results are as good or better if we
+choose an appropriate architecture.
+
+
+## Meanwhile
+
+I am thinking about softmax and a subsequent loss function called "categorical
+cross-entropy".
+
+Softmax is:
+
+        ex = np.exp(x)
+        yh = ex / np.sum(ex, axis=0)
+
+Categorical cross-entropy is:
+
+        loss = np.mean(-np.log(yh[y, np.arange(n)]))
+
+I tried making these separate layers but got into trouble computing the
+derivatives for the gradient. The problem is that softmax destroys a dimension
+of space, and I don't know enough calculus to get the right answer despite
+having decomposed the function in that way.
+
+Unpacking the numpy magic, we get:
+
+    # n = number of examples
+    # no = number of outputs (== number of categories)
+    ex[i,j] = exp(x[i,j])
+    yh[i,j] = ex[i,j] / sum(ex[k,j] for k in range(no))
+    loss = mean(-log(yh[y[j], j]) for j in range(n))
+
+So what is the derivative of loss with respect to each x?
+
+    dyh[i,j] = -1/(n * yh[i,j]) if i == y[j] else 0
+
+    dex[i,j] = ∂loss/∂yh[y[j],j] * ∂yh[y[j],j]/∂ex[i,j]
+    dex[i,j] = dyh[y[j], j] * (
+        if i == y[j]
+        then (sum(ex[k,j] for k in range(no)) - ex[y[j],j]) / sum(ex[k,j] for k in range(no)) ** 2
+        else -ex[y[j],j] / sum(ex[k,j] for k in range(no)) ** 2
+    )
+
+    dx[i,j] = exp(x[i,j]) * dex[i,j]
+
+There is a mathematically easier, computationally harder way that is correct
+regardless of the loss function. Hey how 'bout it.
+
+    dex[i,j] = sum(for k in 0..no: ∂loss/∂yh[k,j] * ∂yh[k,j]/∂ex[i,j])
+             = sum(for k in 0..no: dyh[k,j] * (
+                   if i == k
+                   then (sumex[j] - ex[k,j]) / sumex[j]**2
+                   else -ex[k,j] / sumex[j]**2
+               )
+             = sum(for k in 0..no:
+                   dyh[k,j] * ((if i == k then sumex[j] else 0) - ex[k,j]) / sumex[j]**2)
+
+This formula assumes something about linearity of partial derivatives that I
+don't even know how to articulate. But I suspect it's true. It is definitely
+true for the case we've got, where only one element of yh actually contributes
+to a change in loss.
+
+----
+
+With this formula, the program actually works.

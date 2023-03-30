@@ -22,7 +22,7 @@ class FlattenLayer(Layer):
         y = x.reshape((n, -1)).T
         return y
 
-    def derivatives(self, x, dz, _out):
+    def derivatives(self, _params, x, dz, _out):
         return dz.reshape((-1,) + self.input_shape)
 
 
@@ -50,7 +50,7 @@ class LinearLayer(Layer):
         Backpropagation.
 
         dz[r,c] is the partial derivative of loss with respect to z[r,c]; that
-        is the partial derivative of the *rest* of the pipeline with respect to
+        is, the partial derivative of the *rest* of the pipeline with respect to
         output r at training sample x[:,c].
         """
 
@@ -100,7 +100,7 @@ class SigmoidLayer(ActivationLayer):
 
 
 class ReluLayer(ActivationLayer):
-    """Rectivied linear unit activation function."""
+    """Rectified linear unit activation function."""
 
     def f(self, x):
         return np.where(x >= 0, x, 0)
@@ -145,15 +145,29 @@ class Sequence(Layer):
 
 class SoftmaxLayer(Layer):
     def apply(self, _params, x):
-        return np.mean(np.exp(x), axis=0, keepdims=True)
+        x = np.where(x > 400, 400, x) # avoid warning
+        ex = np.exp(x)
+        return ex / np.sum(ex, axis=0)
 
-    def derivatives(self, x, dz, _out):
-        # We have dL/dz. We seek dL/dx = dL/dz * dz/dx,
-        # where dz/dx = d/dx (exp(x) / sum(exp(xi))).
-        # By the quotient rule this is = exp(x) * (sum(exp(xi)) - exp(x)) / sum(exp(xi)) ** 2
+    def derivatives(self, _params, x, dz, _out):
         ex = np.exp(x)
         sum_ex = np.sum(ex, axis=0, keepdims=True)
-        return dz * (ex * (sum_ex - ex) / sum_ex ** 2)
+
+        # Cell (i,j) of the result should be
+        #     sum(∂loss/∂z[k,j] * ∂z[k,j]/∂ex[i,j] * ∂ex[i,j]/∂x[i,j]
+        #         for k in range(no))
+        #   = sum(dz[k,j]
+        #         * ((sum_ex[1,j] if i == k else 0) - ex[k,j]) / sum_ex[1,j]**2
+        #         * ex[i,j]
+        #         for k in range(no))
+        #   = (ex[i,j] / sum_ex[1,j]**2)
+        #     * sum(dz[k,j] * ((sum_ex[1,j] if i == k else 0) - ex[k,j])
+        #           for k in range(no))
+        #   = (ex[i,j] / sum_ex[1,j]**2)
+        #     * (dz[i,j] * sum_ex[1,j]
+        #        - sum(dz[k,j] * ex[k,j] for k in range(no)))
+
+        return (ex / sum_ex ** 2) * (dz * sum_ex - np.sum(dz * ex, axis=0, keepdims=True))
 
 
 class LogisticLoss:
@@ -173,12 +187,28 @@ class LogisticLoss:
         return 1.0 / (n * np.where(y == 0, 1 - yh, -yh))
 
 
-class CategoryCrossEntropyLoss:
+class CategoricalCrossEntropyLoss:
     def loss(self, y, yh):
-        raise NotImplementedError
+        c, n = yh.shape  # number of categories, number of examples
+        assert y.shape == (n,)
+        assert y.dtype.kind in ('i', 'u')
+        assert np.all((y >= 0) & (y < c))
+        assert np.all((yh >= 0.0) & (yh <= 1.0))
+        return np.mean(-np.log(yh[y, np.arange(n)]))
 
     def deriv(self, y, yh):
-        raise NotImplementedError
+        ## There is a better way to say this but I don't remember it.
+        c, n = yh.shape
+        assert y.shape == (n,)
+        column = np.arange(c)[:, np.newaxis]
+        assert column.shape == (c, 1)
+        mask = y[np.newaxis, :] == column
+        assert mask.shape == (c, n)
+        return np.where(mask, -1.0 / (n * yh), 0)
+
+    def accuracy(self, y, yh):
+        predictions = np.argmax(yh, axis=0)
+        return np.mean(predictions == y)
 
 
 def unit_vector(v):
@@ -194,9 +224,13 @@ def angle_between(u, v):
 class Model:
     def __init__(self, rng, seq, loss):
         self.seq = seq
-        self.params = 0.02 * rng.standard_normal((seq.num_params(),))
+        nparams = seq.num_params()
+        print(f"creating model with {nparams} parameters")
+        self.params = 0.02 * rng.standard_normal((nparams,))
         self.loss = loss
-        self.learning_rate = 0.05
+        self.learning_rate = 0.25
+        self.last_loss = None
+        self.last_params = None
         self.last_gradient = None
 
     def apply(self, x):
@@ -205,17 +239,34 @@ class Model:
     def train(self, x_train, y_train):
         yh = self.seq.apply(self.params, x_train)
         loss = self.loss.loss(y_train, yh)
-        print("loss:", loss)
+
+        accuracy = self.loss.accuracy(y_train, yh)
+
         dyh = self.loss.deriv(y_train, yh)
         dp = np.zeros((self.seq.num_params(),))
         _ = self.seq.derivatives(self.params, x_train, dyh, dp)
-        if self.last_gradient is not None:
-            a = angle_between(self.last_gradient, dp)
-            print("change in direction:", a)
-            if a > math.pi / 72:
-                self.learning_rate /= 10
-            elif self.learning_rate < 10:
-                self.learning_rate *= 1.1
-        print("learning rate:", self.learning_rate)
-        self.params -= self.learning_rate * dp
-        self.last_gradient = dp
+
+        if np.all(dp == 0.0):
+            print("gradient is 0")
+            return
+
+        ## dp = unit_vector(dp)
+        ## if self.last_gradient is not None:
+        ##     a = angle_between(self.last_gradient, dp)
+        ##     if a > math.pi / 72:
+        ##         print("slowing down")
+        ##         self.learning_rate *= 1/11
+        ##         if loss >= self.last_loss:
+        ##             # actually revert params and gradient
+        ##             self.params = self.last_params
+        ##             dp = self.last_gradient
+        ##     else:
+        ##         self.learning_rate *= 1.25
+        l = self.learning_rate
+
+        print(f"loss={loss:.4f} accuracy={accuracy:.4f} λ={l}")
+
+        ## self.last_loss = loss
+        ## self.last_params = self.params
+        self.params = self.params - self.learning_rate * dp
+        ## self.last_gradient = dp

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from keras.datasets import mnist
 
 from myml import (FlattenLayer, LinearLayer, ReluLayer, SigmoidLayer, SoftmaxLayer,
-                  Sequence, CategoryCrossEntropyLoss, Model)
+                  Sequence, CategoricalCrossEntropyLoss, Model)
 
 
 def main():
@@ -30,15 +30,18 @@ def main():
             LinearLayer((10, 100)),
             SoftmaxLayer(),
         ]),
-        CategoryCrossEntropyLoss(),
+        CategoricalCrossEntropyLoss(),
     )
 
-    NROUNDS = 298
+    NROUNDS = 2998
     decile = (NROUNDS - 1) // 9
+    n = x_train.shape[0]
+    BATCH_SIZE = 100
+    assert n % BATCH_SIZE == 0
     for i in range(NROUNDS):
-        if i % decile == 0:
-            print(".", end=None)
-        model.train(x_train, y_train)
+        i0 = i * BATCH_SIZE % n
+        i1 = i0 + BATCH_SIZE
+        model.train(x_train[i0:i1], y_train[i0:i1])
 
         ## # print some facts about what the model is actually doing
         ## [[dzdx], [dzdy]] = layer.weights
@@ -50,7 +53,24 @@ def main():
 
         ## print("accuracy (training data):", layer.accuracy(x_train, y_train))
         ## print("accuracy (test data):", layer.accuracy(x_test, y_test))
-    print(".")
+
+    n = x_test.shape[0]
+    predicted_prob = model.apply(x_test)
+    predictions = np.argmax(predicted_prob, axis=0)
+    failures = np.arange(n)[predictions != y_test]
+    print("{}/{} images misclassified ({:.1f}% accuracy)".format(
+        len(failures), n, 100 * (n - len(failures)) / n))
+
+    W, H = 16, 12
+
+    fig, axs = plt.subplots(H, W, subplot_kw={'xticks': [], 'yticks': []})
+    for cell, i in enumerate(failures):
+        if cell >= H * W:
+            break
+        y = y_test[i]
+        print("img #{} is {}, predicted {} with P={}, P[{}]={}".format(i, y, predictions[i], predicted_prob[predictions[i],i], y, predicted_prob[y,i]))
+        axs.flat[cell].imshow(x_test[i], interpolation='bicubic')
+
     plt.show()
 
 

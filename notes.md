@@ -361,7 +361,10 @@ Hey, I was right. You can't initialize all parameters to zero for exactly the
 reason I thought.
 
 I wonder what this looks like in the parameter space, what the geometric
-intuition is.
+intuition is. A: The parameter space is exactly symmetric about planes on which
+any two neurons are the same. If we start on that line, there will never be any
+gradient in a direction away from that plane, so we are stuck there. The two
+neurons can't diverge.
 
 Small random values are better because we want to start in the neighborhood of
 the activation function where its slope is not extremely close to zero.
@@ -1123,16 +1126,6 @@ session.run(train, feed_dict={x: coefficients})
 
 Not really following this part.
 
-## Lab
-
--   Play around with Tensorflow
--   Find Adam optimizer in Keras and how to specify the hyperparameters.
--   Find Softmax in Keras and try to figure out how it conceptually fits in.
--   My Keras demo is actually using `'softmax'` already.
-    What then is `'sparse_categorical_crossentropy'`?
-    A: It's the loss function. After softmax it computes the entropy of the
-    correct answer with respect to our model's predictions. "Sparse" may
-    just refer to the distribution being discrete (10 outcomes).
 
 ## `C1_W4_Lab_1_image_generator_no_validation.ipynb`
 
@@ -1317,3 +1310,91 @@ to a change in loss.
 ----
 
 With this formula, the program actually works.
+
+
+## CS224U - The Stanford NLP Podcast
+
+Rishi Bommasani had an academic team that spent six months independently
+reproducing GPT-2 (because they thought it would be easy™). He says a
+surprising fact about LLMs is that they just crash when you train them long
+enough. Parameters "blow up". I guess it just diverges. He says they've talked
+to practitioners and the standard solution is to save checkpoints, detect the
+crash, roll back, *shuffle the training data* and try again.
+
+
+## Orthogonalization (C3W1L02)
+
+https://www.youtube.com/watch?v=UEtvV1D6B3s&list=PLkDaE6sCZn6E7jZ9sN_xHwSHOdjUxUW_b&index=2
+
+
+Chain of assumptions in ML
+
+- Fit training set well on cost function
+    - bigger network
+    - better optimization algorithm
+- Fit dev set well on cost function
+    - regularization: weight decay, dropout, data augmentation
+    - find more/better training data
+- Fit test set well on cost function
+    - Bigger dev set
+- Performs well in real world
+    - Change dev set; or
+    - Change cost function!
+
+Early stopping affects two things, the first two. Not an orthogonal knob to
+twist.
+
+
+## Single number evaluation metric (C3W1L03)
+
+Precision is a measure of false positives, what proportion of what we found
+really matches the search criteria. Recall is a measure of false negatives,
+what percentage of true matches did we find.
+
+Using these as your evaluation metrics you run into tradeoffs. Having a single
+number settles all the tradeoffs in advance so you focus on iterating.
+
+Instead use an F1 score, harmonic mean of P and R.
+
+Haha this video is dumb but may be incredibly valuable
+
+
+## Satisficing and optimizing metrics (C3W1L04)
+
+You should have 1 optimizing metric and any number of satisficing metrics (i.e.
+constraints).
+
+OK this is not genius stuff
+
+
+## Train/dev/test set distributions (C3W1L05)
+
+https://www.youtube.com/watch?v=M3qpIzy4MQk&list=PLkDaE6sCZn6E7jZ9sN_xHwSHOdjUxUW_b&index=5
+
+
+## Why human level performance? (C3W1L08)
+
+In short, humans are good enough at many tasks; and while your ML is worse than
+humans you can get help from humans (labeling data, etc.).
+
+
+## Avoidable bias (C3W1L09)
+
+"Bias" in the sense of "Bias/Variance" (C2W1L01).
+
+Human-level error as a proxy for Bayes error.
+
+Nonstandard terms: difference between Bayes and your training error is
+"avoidable bias". Distinction matters when Bayes error is nonzero and your
+model's performance gets close to ideal. If your variance is greater than the
+*avoidable* bias then it may be time to work on variance.
+
+
+## Understanding human-level performance? (C3W1L10)
+
+Snore-fest. Where's the good stuff?
+
+
+## C2W1
+
+https://colab.research.google.com/drive/1PcfV25kctKwBSgDpzpVXFC13luLOcOq2

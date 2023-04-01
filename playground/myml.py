@@ -264,9 +264,20 @@ class Model:
         ##         self.learning_rate *= 1.25
         l = self.learning_rate
 
-        print(f"loss={loss:.4f} accuracy={accuracy:.4f} λ={l}")
+        #print(f"loss={loss:.4f} accuracy={accuracy:.4f} λ={l}")
 
-        ## self.last_loss = loss
+        self.last_accuracy = accuracy
+        self.last_loss = loss
         ## self.last_params = self.params
         self.params = self.params - self.learning_rate * dp
         ## self.last_gradient = dp
+
+    def train_epochs(self, epochs):
+        for i, epoch in enumerate(epochs):
+            print(f"epoch {i} - \x1b[s", end="")
+            for x, y in epoch:
+                self.train(x, y)
+                print("\x1b[u" + 50 * " " + "\x1b[u"
+                      + f"loss={self.last_loss:.4f} accuracy={self.last_accuracy:.4f}",
+                      end="")
+            print()

@@ -275,9 +275,19 @@ class Model:
     def train_epochs(self, epochs):
         for i, epoch in enumerate(epochs):
             print(f"epoch {i} - \x1b[s", end="")
+            n_total = 0
+            loss_total = 0
+            accuracy_total = 0
             for x, y in epoch:
+                n = len(x)
+                n_total += n
                 self.train(x, y)
-                print("\x1b[u" + 50 * " " + "\x1b[u"
-                      + f"loss={self.last_loss:.4f} accuracy={self.last_accuracy:.4f}",
-                      end="")
+                if n > 0:
+                    loss_total += self.last_loss * n
+                    accuracy_total += self.last_accuracy * n
+                    loss = loss_total / n_total
+                    accuracy = accuracy_total / n_total
+                    print("\x1b[u" + 50 * " " + "\x1b[u"
+                          + f"loss={loss:.4f} accuracy={accuracy:.4f}",
+                          end="")
             print()

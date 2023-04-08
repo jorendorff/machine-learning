@@ -17,7 +17,7 @@ Notice:
     is a very high probability that the relationship between x and y is y=2x-1,
     but with only 6 data points we can't know for sure. As a result, the result
     for 10 is very close to 19, but not necessarily 19." That can't possibly be
-    an accurate descriptoin of what's going on. More like: it's just making
+    an accurate description of what's going on. More like: it's just making
     guesses, and the best guess it made got it this close.
 
 
@@ -58,10 +58,10 @@ Notice:
 
 -   softmax is sensitive to the base, e. Larger bases cause larger values to
     soak up more of the pie.
-    
+
 -   softmax is sensitive to the scale of the input vector. softmax(data * 2.0) is
-    sharper than softmax(data). 
-    
+    sharper than softmax(data).
+
     To me, this suggests that there are some assumptions about how you're
     supposed to use this. It is a little weird that I wasn't told to normalize
     the data or something beforehand; like, you could compute the mean and
@@ -69,7 +69,7 @@ Notice:
 
 -   We didn't specify an activation function last time. Does that mean we got
     the identity function?
-    
+
     A: Yes.
 
 -   OK, so I think in the tensorflow worldview, "tensor" is a fancy word for
@@ -77,7 +77,7 @@ Notice:
     high-level API on these things, backed by a compiler that compiles your
     model down to machine code, taking advantage of the hardware, to make
     training and prediction efficient.
-    
+
     A: This seems to be correct so far.
 
 Wonder:
@@ -1053,7 +1053,7 @@ Suppose the last layer has 10 outputs, the 10 digits 0-9, and the output of the
 linear part of those neurons is z. z's shape is (10, n) where n is the mini-batch size.
 
     t = exp(z)
-    a = t / sum(t) 
+    a = t / sum(t)
 
 This forces the elements of a to add up to 1 as desired.
 
@@ -1076,7 +1076,7 @@ Claims if C = 2, softmax reduces to logistic regression.
     Loss(yh, y) = -sum(y[j] * log(yh[j]) for j in 0..C)
 
 When y is made up of zeros and ones,
-such that `y[j] = 1` and `y[k] = 0` where `k /= j`, 
+such that `y[j] = 1` and `y[k] = 0` where `k /= j`,
 we get
 
     Loss(yh, y) = -log(yh[j])

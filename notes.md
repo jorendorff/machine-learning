@@ -1395,6 +1395,658 @@ model's performance gets close to ideal. If your variance is greater than the
 Snore-fest. Where's the good stuff?
 
 
+## Surpassing human-level performance (C3W1L11)
+
+If you have surpassed human-level performance, you have no remotely plausible
+estimate of Bayes error. This makes it harder to use the heuristic of C3W1L09
+to decide what to work on next.
+
+OMG he thinks machine learning is good at product recommendations. Literally
+the garbage process that used to populate Borders is better. F minus.
+
+Common threads among fields where computers are doing better than people
+
+- structured data
+- not natural perception
+- lots of data
+
+there are a few perception tasks where ML does better:
+
+- speech recognition
+- some image recognition tasks
+- some medical tasks
+
+in some cases -- but Ng thinks it has been harder.
+
+
+## Improving your model performance (C3W1L12)
+
+https://www.youtube.com/watch?v=zg26t-BH7ao&list=PLkDaE6sCZn6E7jZ9sN_xHwSHOdjUxUW_b&index=12
+
+Once again:
+
+To improve avoidable bias:
+- train a bigger model; or
+- train longer; or
+- use a different optimization algorithm; or
+- use a different NN architecture; or
+- hyperparameter search
+
+To improve variants
+- get more data
+- use regularization (L2, dropout)
+- data augmentation
+- more NN architecture / hyperparameter search
+
+
+## Carrying out error analysis (C3W2L01)
+
+Manually examining the mistakes your algorithm is making can help.
+
+Error analysis plan:
+- Get ~100 mislabeled dev set examples.
+- Count how many the work you're considering doing would actually fix.
+
+Use a spreadsheet and evaluate multiple ideas in parallel.
+
+## Cleaning up incorrectly labeled data (C3W2L02)
+
+Deep learning algorithms are quite robust for *random* errors in the training
+set. Not systemic errors.
+
+If you're worried about errors in the dev or test set, add a column
+"incorrectly labeled" to your error analysis spreadsheet.
+
+It is often not worth fixing incorrectly labeled data.
+
+Advice:
+
+-   Make sure you apply the same process to dev and test! They have to be from
+    the same distribution.
+
+-   Consider examples your classifier got right as well as ones it got wrong.
+
+
+## Build first sytsem quickly, then iterate (C3W2L03)
+
+Part of the value in building some working system and test/dev sets is the
+ability to use error analysis to guide the team's attention.
+
+
+## Training and testing on different distributions (C3W2L04)
+
+Good sense.
+
+
+## Bias and variance with mismatched data (C3W2L05)
+
+If your train and dev sets are different distributions,
+then when there is a big gap in accuracy between the two stes,
+you don't know if it's because of variance (overfitting) or distribution.
+
+Ng uses "variance" to refer specifically to the network "not generalizing well"
+from the training data to dev, not to the other effect.
+
+Solution: training-dev set with the same distribution as the training set, but
+used for evalutaion, not training.
+
+From training to training-dev is variance.
+
+From training-dev to dev is the data mismatch problem.
+
+It sometimes happens that your dev/test examples are "easier" than the training
+examples from a different source, and so the error is much lower. To confirm
+this is happening you can evaluate your network on specifically the examples in
+your training set that are representative of the dev/test distribution. To
+illustrate this Ng drew a 2d matrix where the two distributions are the
+columns, and the rows are "human level / bayes error", "error on examples you
+trained on", and "error on examples not trained on".
+
+
+## Addressing data mismatch (C3W2L06)
+
+Error due to mismatch between training and test/dev distributions.
+
+There are not systematic ways to do this.
+
+*   Manual error analysis - try to understand the differences.
+
+*   Find ways to make training data more similar; or collect more.
+
+Artificial data synthesis; limitations of. In speech recognition has seen it
+work. CGI pictures of cars, hmm.
+
+
+## Transfer learning (C3W2L07)
+
+1.  Pre-train a deep neural net for task A, using one data set.
+2.  Replace the last layer(s) with new layers, initialized with random weights.
+3.  Train the new layers (and others if desired) on the actual target task, task B.
+
+Makes sense when
+- tasks A and B have the same type of input
+- you have a lot more data for task A than B
+- low-level features learned for A are useful for B
+
+This is useful when you have a lot of training data for the first task and not
+so much for the second task.
+
+https://www.youtube.com/watch?v=sn_QSB7T1xo&list=PLkDaE6sCZn6E7jZ9sN_xHwSHOdjUxUW_b&index=18
+
+
+## Multi-task learning (C3W2L08)
+
+Train for multiple tasks at once.
+
+Oddly a lot of this is about designing a loss function to train a multiple
+classifier as opposed to, say, softmax on digit recognition
+
+Makes sense when
+- tasks can benefit from shared lower-level features
+- amount of data you have for each task is pretty similar
+- you can train a big enough neural network to do well on all tasks
+
+Not super common. Computer vision object detection are the main applications.
+
+
+## What is end-to-end deep learning? (C3W2L09)
+
+Speech recognition used to involve a pipeline:
+
+    audio -> features -> phonemes -> words -> transcript
+
+End-to-end deep learning replaces all this with a single neural network. A
+large training set is required -- on the order of 100,000 hours of audio for
+transcription! (This obsoleted many years of research in speech recognition.)
+
+**It doesn't always work.**
+
+Example: face recognition turnstile
+
+This is best decomposed into two subtasks because there's lots of data for each
+of them, not end-to-end (this is 2017). Finding a face in a photo, lots of
+examples exist, likewise there are hundreds of millions of examples for
+detecting if two mugshots are the same person.
+
+Example: Machine translation. End-to-end works very well because it's possible
+to get enough (x, y) pairs.
+
+Example: Estimate the age of a child from an x-ray (used to see if a patient is
+developing normally)
+
+`image --(segmentation)--> bones -> age` decomposition works well; there is not
+enough data to do the task end-to-end.
+
+
+## Whether to use end-to-end learning (C3W2L10)
+
+Pros:
+
+-   Let the data speak, not human preconceptions.
+    (For example, Ng thinks phonemes are a fantasy of linguists!)
+
+-   Less hand-designing of components.
+
+Cons:
+
+-   May need a lot of data
+
+-   Excludes potentially useful hand-designed components (which allows you to
+    manually inject knowledge into the system -- can help or hurt).
+
+Really the question is if you have enough data.
+
+Imagine the problem of self-driving cars. You must take the input, find
+objects, route, and then steer, brake, etc. End-to-end deep learning is not the
+approach that works best.
+
+This concludes course 3. Course 4 should get back to interesting stuff.
+
+
+## CS480/680 Lecture 19: Attention and Transformer Networks
+
+Pascal Poupart, U Waterloo, Spring 2019. The name of the course is
+"Introduction to Machine Learning".
+
+https://www.youtube.com/playlist?list=PLdAoL1zKcqTW-uzoSVBNEecKHsnug_M0k
+
+-   Attention Is All You Need 2017 (when was the podcast I heard made?)
+
+-   attention on images gives "heatmaps"
+
+-   useful for evaluating understanding - a network classifies a picture as
+    containing a building. well, which pixels told you that? useful for the
+    system to be able to tell you.
+
+-   2015: machine translation - this mechanism lets a network "peek back"
+    at previous tokens so it doesn't lose track of what it's translating,
+    and doesn't have to remember evyrething - great for long sentences
+
+-   2017: language modeling with transformer networks
+
+    (many tasks can be cast as language modeling -- yeah no kidding)
+
+-   RNNs are hard to train. They blow up, large # of training steps needed.
+    Recurrence (correlated parameters) makes optimization hard, prevents
+    parallel computation.
+
+-   Transformer networks have fewer layers in practice.
+
+He has not gotten to what the idea is. Also I didn't watch any previous videos
+so I don't know what attention is really. Oh wait, he recaps at 11:50.
+
+-   Attention mimics the retrieval of a value for a query based on a key, like
+    a select in a database.
+
+        attention(q, k, v) = sum(for i, similarity(q, k[i]) * v[i])
+
+    Q: The similarity function ought to sum to at most 1, I think, or there
+    should be a weighted average instead?
+
+This is great, will watch more later.
+
 ## C2W1
 
 https://colab.research.google.com/drive/1PcfV25kctKwBSgDpzpVXFC13luLOcOq2
+
+
+## Convolutional neural networks (C4W1)
+
+-   Computer vision (C4W1L01)
+
+-   Edge detection examples (C4W1L02)
+
+-   More edge detection (C4W1L03)
+
+    At the beginning of computer vision, there was a lot of debate about which
+    numbers to use in your edge detection matrix. Sobel filter, Scharr filter.
+    But with deep learning you just learn them.
+
+-   Padding (C4W1L04)
+
+    By convention, when you pad, you pad with zeros. (In the later course, we
+    never bother.)
+
+    "Valid" - no padding
+
+    "Same" - pad so that output size = input size
+
+-   Strided Convolutions (C4W1L05)
+
+-   Convolutions over volumes (C4W1L06)
+
+    "Depth" - number of layers in a neural network
+    "Channels" - dimension through different kinds of information in each pixel
+
+    (640, 480, 3) * (64, 3, 3, 3) => (640-2, 480-2, 64)
+
+-   One layer of a convolutional net (C4W1L07)
+
+    Bias for a conv2d layer is a single parameter per channel,
+    added to every pixel;
+    relu applied to every pixel
+
+    number of params is independent of image size
+    thus less prone to overfitting
+
+    notationL `(n_H, n_W, n_C)` for height, width, channels/filters
+
+    shape of weights is `(f[l], f[l], n_C[l-1], n_C[l])`
+
+    some authors put channels first (in the shape tuple)
+
+-   A simple convolutional network example (C4W1L08)
+
+    His example has 1960 outputs from the convlutional layers to the dense layers.
+
+-   Pooling layers (C4W1L09)
+
+    I've only seen `f=2, stride=2` but `f=3, stride=2` is sometimes used.
+
+    Almost never uses padding, though there is one exception we'll see next week
+    (it is in C4W2L05, the inception network).
+
+    Pooling applies to each channel independently (each channel is a feature).
+
+-   CNN example (C4W1L10)
+
+    LeNet-5 was a pioneering example of a convolutional neural network with two
+    convolutional layers (with 5x5 filters but a tiny number of channels) and
+    three dense layers.
+
+    It was 1989, so the sigmoid activation function was used, and average
+    pooling rather than max pooling.
+
+    Total number of activations decreases gradually as you progress through the
+    layers (though the convolutional layers tend to increase the number
+    slightly, especially the first, where you go from 3 channels to maybe 8 or
+    16 or 100). If it drops too suddenly that tends to be bad for performance.
+
+-   Why convolutions (C4W1L11)
+
+    - parameter sharing
+    - sparse connections
+
+    CNNs are sometimes said to be very good at capturing translation invariance.
+    Convolutional structure helps the network encode this. I haven't seen it yet,
+    with these tiny images we're using, but OK.
+
+-   Why look at case studies? (C4W2L01)
+
+## Classic networks (C4W2L02)
+
+### LeNet-5
+
+LeCun et al., 1998. Gradient-based learning applied to document recognition.
+
+About 60,000 parameters. To save computation, some filters in each
+layer saw some channels of the input, but not all. These days you would
+just connect them all.
+
+### AlexNet
+
+Krizhevsky et al., 2012. ImageNet classification with deep CNNs.
+
+Input is 227x227x3 images. Layers:
+
+-   conv2d(96 filters, 11x11, stride=4)
+-   maxpool2D 3x3, stride=2
+-   conv2d(256 filters, 5x5, padding='same')
+-   maxpool2d 3x3, stride=2
+-   conv2d(384 filters, 3x3, padding='same')
+-   conv2d(384 filters, 3x3, padding='same')
+-   conv2d(256 filters, 3x3, padding='same')
+-   maxpool2d(3x3, stride=2)
+-   flatten (9216 outputs)
+-   Dense(4096)
+-   Dense(4096)
+-   Dense(1000, activation='softmax')
+
+Like LeNet but much bigger. About 60M parameters. Used ReLU. Multiple GPUs.
+
+Local response normalization (LRN). Not used anymore.
+
+This is the paper that convinced the computer vision community that deep
+learning worked. One of the more accessible papers.
+
+### VGG-16
+
+Simonyan & Zisserman 2015. Very deep convolutional networks for large-scale
+image recognition.
+
+16 refers to 16 layers with parameters to tune.
+
+All Conv2D layers in this network use 3x3 filters, stride of 1, and "same" padding.
+All MaxPool2D layers are just 2x2 with a stride of 2.
+
+-   Conv2D(64) twice
+-   MaxPool2D
+-   Conv2D(128) twice
+-   MaxPool2D
+-   Conv2D(256) three times
+-   MaxPool2D
+-   Conv2D(512) three times
+-   MaxPool2D
+-   Conv2D(512) three times
+-   MaxPool2D
+-   Dense(4096)
+-   Dense(4096)
+-   Dense(1000, activation='softmax')
+
+138M parameters. Size goes down as number of features goes up. Relative
+uniformity of the architecture meant it felt like less just-so magic. But, a
+lot of parameters to train.
+
+(Second paper to read, after AlexNet.)
+
+
+## ResNets (C4W2L03)
+
+He et al., 2015. Deep residual networks for image recognition.
+
+A residual block is a series of layers in which inputs are "fast-forwarded" and
+added to a later layer. In the example, the inputs `a[l]` are added to the output of the linear transform in layer `l+2`, like this:
+
+    z[l+1] = W[l+1] @ a[l] + b[l+1]
+    a[l+1] = g(z[l+1])
+
+    z[l+2] = W[l+2] @ a[l+1] + b[l+2]
+    a[l+2] = g(z[l+2] + a[l])         <---- note extra a[l] term here
+
+(Why is the shortcut injected before the nonlinearity? It makes sense.)
+
+(Wait, isn't the new addition adding values with very different meanings? Maybe
+the intermediate layers l+1 and l+2 are just "fine-tuning", or touching up the
+output of layer l.)
+
+The addition means layers must have the same dimension, so you see a lot of
+"same" padding. If they are different, you can add another matrix to change the
+size of the fast-forwarded data:
+
+    a[l+2] = g(z[l+2] + Ws @ a[l])
+
+where `Ws` is a matrix of parameters to be learned, or any number of other things.
+
+Stack residual blocks to make your network.
+
+Why is this valuable? It allows you to train much deeper networks.
+
+Empirically, the more layers you add, past a point, training error goes back
+up. But residual networks help with vanishing and exploding gradients, so
+deeper networks continue to improve loss.
+
+
+## Why ResNets work (C4W2L04)
+
+Intuitively, it's very easy for the network to learn the identity function for
+a residual block. Just let all weights decay to 0 and that is what you get.
+
+So it makes sense a residual block probably shouldn't hurt performance.
+
+
+## Network in network (C4W2L05)
+
+Lin et al., 2013. Network in network.
+
+A 1x1 Conv2D layer is a linear combination of the channels. So it's like a
+Dense layer but applied to each pixel in the manner of a Conv2D layer.
+
+Can be used to reduce the number of channels any amount.
+
+
+## Inception network motivation (C4W2L06)
+
+Szegedy et al. 2014. Going deeper with convolutions.
+
+Just do everything in every layer, and stack up the output channels, which all
+need to have the same size. (Here if you want to try pooling among the other
+things you're trying, you'll use MaxPool2D with stride 1 and "same" padding, an
+unusual case.)
+
+Computational cost is a problem. Convolutions with large filters *and* lots of
+input channels *and* lots of output channels cost `f*f*ni*no` to compute _per
+pixel_. So there's a trick: use a 1x1 convolution (a "bottleneck layer") to
+reduce the number of channels first. This saves 90%, doesn't hurt performance
+in practice. I wonder if they wouldn't have been better off using the hack from
+LeNet-5.
+
+
+## Inception network (C4W2L07)
+
+Szegedy et al., 2014, Going deeper with convolutions.
+
+An inception module takes the previous activation, does in parallel these
+things. For the same of example, suppose the input has 192 channels.
+
+-   1x1 conv (producing, for example, 64 channels)
+-   1x1 conv bottleneck into 3x3 conv (128 channels)
+-   1x1 conv bottleneck into 5x5 conv (32 channels)
+-   max pooling 3x3, stride=1 but in our example this produces 192 channels of
+    output, and we don't want pooling to dominate the output. so pipe the result
+    into a 1x1 conv to reduce output dimensionality (32 channels)
+
+Then do channel concatenation to produce one big volume of outputs (256
+channels) each channel the same size.
+
+The inception network is just a stack of these modules, with occasional pooling
+layers to reduce size.
+
+In the paper, there are side branches that use a hidden layer to try to make a
+prediction. Ensures that even features in the middle of the network are not too
+bad for predicting what we want to know about an image. "This appears to have a
+regularizing effect" on the system, prevents overfitting.
+
+This was developed at google and called "GoogLeNet", in homage to LeNet.
+
+_Inception_ movie meme. Ugh.
+
+
+## What is Word2Vec? A simple explanation
+
+https://www.youtube.com/watch?v=hQwFeIupNP0
+
+I watched the first 13:40 of this. The vector representation of a word is the
+set of weights for the *last* layer of the network, for the neuron selecting
+that word as output. In the next 3' of the video, he uses a different task, and
+there the vector representation is the set of weights for the *first* layer of
+the network (which is what I had anticipated). Either one works.
+
+(There must be a way to use the same weights in reverse on input. But never
+mind.)
+
+This is clearly what (Bengio 2003) was trying to tell me. The task they chose
+was language modeling. This is pretty rad!
+
+You can search the vector space for gender pairs of words. You can figure out
+the past tense relationship and look for instances of that or use it to find
+the past tense of any verb. Or the country-capital relation.
+
+
+
+## Convolutional neural networks (C4W2)
+
+-   Using open source implementations (C4W2L08)
+
+-   Transfer learning (C4W2L09)
+
+    "something you should always do" in computer vision
+
+    Replace the final softmax layer with your own new one.
+
+    `trainableParameter=0` or `freeze=1` to stop training layers
+
+    For training, precompute the frozen part on each example input and save them to disk.
+
+    If you have more data, freeze fewer layers. Keep later layers and their
+    parameters, but retrain them on your data; or replace them with your own layers.
+
+-   Data augmentation (C4W2L10)
+
+    For most computer vision problems, we just can't get enough data.
+
+    - mirroring
+    - random cropping (as long as reasonably large)
+    - rotation, shearing, local warping - used less perhaps because of complexity
+    - color shifting (using PCA, details in AlexNet paper)
+
+    This is a little wild to me -- data augmentation is possible because of
+    symmetries in the problem space, but instead of incorporating those
+    symmetries into the network, we train it in with this cumbersome mechanism.
+
+-   State of computer vision (C4W2L11)
+
+    As of November 2017:
+
+    - we have a nice amount of data for speech recognition
+    - can never get enough for image recognition
+    - even less for object detection
+
+    When you have lots of data, you can "get away with" using simpler
+    algorithms and less hand-engineering. Less data, more hacks.
+
+    You see a lot of complex hyperparameter choices in computer vision.
+
+    (Transfer learning fits on this data-hacks axis too.)
+
+    Fun dumb things you only do to excel on benchmarks:
+    -   ensembling - train 3-15 networks independently and average their outputs
+        (good for 1-2%)
+    -   multi-crop at test time - run classifier on several versions of test image
+        and average the results (too slow/expensive, 10x, in production)
+
+
+## Labs for computer vision week 2
+
+my assignment to myself
+
+-   grab imagenet data set, train a plain CNN on it, maybe exactly AlexNet
+-   implement data augmentation via mirroring and random cropping, measure improvement
+-   implement resnet, measure without data augmentation
+-   and measure with both
+
+Resume computer vision playlist at week 3:
+https://www.youtube.com/watch?v=GSwYGkTfOKk&list=PLkDaE6sCZn6Gl29AoE31iwdVwSG-KnDzF&index=23
+
+
+## Word2vec plan
+
+-   My training set will be Programming Rust, which is 213,551 words. i'll
+    start by not stripping out anything, counting newlines and punctuation as
+    tokens. there are some `V`=12,000 distinct words counting all that garbage
+
+    ```
+    cat ../../rust-book/atlas/*.md | sed 's/$/ <NL>/' | sed -E 's/([.,:;!?()"[`~^*%+<>&@\/|{}-]|\])/ \1 /g' | sed 's/ /\n/g' | sed 's/^ *//' | sort | uniq -c | wc -l
+    ```
+
+-   problem is prediction based on previous `n` words.
+
+-   Network architecture: experiment with it, but I believe word2vec did
+    something very simple with just 2 layers, an input layer to compress the
+    `n * V` inputs to `n_vec` activations, and a softmax output layer to expand
+    those to `n` outputs.
+
+-   Implement in Keras.
+
+    -   Why didn't the Keras `one_hot` gadget work for me?
+
+    -   Start a document: Keras shapes. Log all errors.
+
+    -   Find out how to save weights.
+
+    -   Babble as we go.
+
+-   Write code to generate babble from this.
+
+-   Save the weights.
+    -   Implement knn.
+    -   Implement the analogy game. Have the computer generate analogy puzzles for me.
+    -   Find the words nearest to one another.
+    -   Have the computer search for word pairs whose average is near a word.
+
+-   Learn vectors again from scratch and try to evaluate whether the two
+    vectorizations agree.
+
+-   Learn vectors from another Rust text written in Markdown (?) and evaluate
+    whether the two agree.
+
+    -   Qualitatively, does the babble look the same?
+
+-   What about other corpora?
+
+-   What happens if the number of dimensions of the vector space is extremely
+    impoverished, like 3 or 16? What happens to loss and what happens
+    qualitatively? How does it compare to doing PCA (or whatever) on the
+    100-dimensional vectors?
+
+-   What happens if we add more layers to the model? (To loss, to the learned
+    vectors?)
+
+-   Q: What is the mapping of `{word --> vector}` called?
+
+-   Q: Why is the vector called an "embedding"?
+
+-   Make another neural net for the same task that *starts* with vectors, i.e.
+    fewer inputs because we begin by mapping each word not to a huge pile of
+    zeros but a vector embedding. But keep the output layers the same. Can we
+    now include more words of context? Does training this net change the
+    weights of the output layer much?

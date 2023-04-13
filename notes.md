@@ -1,3 +1,5 @@
+# The Coursera course - C1 weeks 1 and 2
+
 ## tensorflow-1-public C1W1 (2023-03-03)
 
 [keras-example.md](tensorflow-1-public/C1/W2/keras-example.md) is my version of the stuff in
@@ -85,7 +87,14 @@ Wonder:
 -   These two activation functions don't affect the shape of the data. Are
     there any that do?
 
-## Logistic Regression (C1W2L02)
+
+
+# Course 1 - Neural networks and deep learning
+
+https://www.youtube.com/playlist?list=PLkDaE6sCZn6Ec-XTbcX1uRg2_u4xOEky0
+
+
+## Logistic regression (C1W2L02)
 
 https://www.youtube.com/watch?v=hjrYrynGWGA&list=PLkDaE6sCZn6Ec-XTbcX1uRg2_u4xOEky0&index=8
 
@@ -100,7 +109,7 @@ makes the optimization problem non-convex.
     So I think what they use is `avg(-(y log yhat + (1-y) log (1-yhat)))`.
 
 
-## Explanation of Logistic Regression's Cost Function (C1W2L18)
+## Explanation of logistic regression's cost function (C1W2L18)
 
 https://www.youtube.com/watch?v=k_S5fnKjO-4&list=PLkDaE6sCZn6Ec-XTbcX1uRg2_u4xOEky0&index=24
 
@@ -205,6 +214,7 @@ It's all such motivated reasoning.
 Saw an ad for learn-xpro.mit.edu. Neat stuff, very appealing. I doubt this
 course is free.
 
+
 ## Discussion
 
 Neural networks mix calculus and linear algebra in a way I don't understand.
@@ -288,18 +298,21 @@ Gradient descent only finds a local minimum. The Nature survey paper you posted
 has a paragraph about "poor local minima", saying, effectively, "works fine in
 practice, what do you want".
 
-## Computing Neural Network Output (C1W3L03)
+
+## Computing neural network output (C1W3L03)
 
 Oh, the single-neuron logistic regression isn't seen as a neural network
 really. It must be a technique that sort of precedes neural networks.
 
 Already knew all this. Skipped a lot.
 
-## Vectorizing Across Multiple Examples, Explanation for Vectorized implementation
+
+## Vectorizing across multiple examples (C1W3L04), Explanation for vectorized implementation (C1W3L05)
 
 Skipping this one.
 
-## Activation Functions
+
+## Activation functions (C1W3L06)
 
 I'd like to understand why this is the case: The video says that for hidden
 layers, tanh (which it describes as a shifted version of the sigmoid function)
@@ -319,11 +332,13 @@ that learning could make it into a sharp step function or could make use of the
 nice curved parts -- it seemed versatile. Though maybe that kind of thing
 creates concavities in the optimization problem.
 
-## Why Non-linear Activation Functions (C1W3L07)
+
+## Why non-linear activation functions (C1W3L07)
 
 I already knew this, skipping
 
-## Derivatives of Activation Functoins (C1W3L08)
+
+## Derivatives of activation functions (C1W3L08)
 
 Did I do the derivative of the sigmoid wrong?
 
@@ -348,12 +363,14 @@ D tanh z = q - (tanh z)**2
 
 I will take this one on faith.
 
+
 ## Backpropagation Intuition (C1W3L10)
 
 Lots of calculus. I did all this calculus for my example program, but it's hard
 to verify (using normal software debugging techniques) that I got it right.
 Unfortunately it is also hard to do that using the video, as slightly different
 choices lead to quite different formulas. I'll leave it for now.
+
 
 ## Random Initialization (C1W3L11)
 
@@ -369,9 +386,11 @@ neurons can't diverge.
 Small random values are better because we want to start in the neighborhood of
 the activation function where its slope is not extremely close to zero.
 
+
 ## Forward Propagation in a Deep Network (C1W4L02)
 
 Obvious.
+
 
 ## Getting Matrix Dimensions Right (C1W4L03)
 
@@ -381,6 +400,7 @@ Maybe the reason it's easier to have a separate vector of parameters `b` for
 each layer rather than use a fake dimension that's always 1 is that you'd have
 to add a 1 on every layer... or else you have to do something to make sure the
 parameters preserve that 1 and never change.
+
 
 ## Why Deep Representations? (C1W4L04)
 
@@ -421,6 +441,7 @@ both.)
 
 Ng's honesty in the final section here is balm for the soul.
 
+
 ## Parameters vs Hyperparameters (C1W4L07)
 
 Hyperparameters:
@@ -455,7 +476,7 @@ Computer vision has taken more inspiration from the human brain than other
 fields.
 
 
-# Course 2 - Improving Deep Neural Networks: Hyperparameter Tuning, Regularization and Optimization
+# Course 2 - Improving deep neural networks: hyperparameter tuning, regularization and optimization
 
 ## Train/Dev/Test Sets (C2W1L01)
 
@@ -1127,6 +1148,9 @@ session.run(train, feed_dict={x: coefficients})
 Not really following this part.
 
 
+
+# The Coursera course - C1W4
+
 ## `C1_W4_Lab_1_image_generator_no_validation.ipynb`
 
 from the coursera course "Introduction to TensorFlow for Artificial
@@ -1250,7 +1274,7 @@ doing the math on fewer pixels, and the results are as good or better if we
 choose an appropriate architecture.
 
 
-## Meanwhile
+# MyML implementation of cross-entropy
 
 I am thinking about softmax and a subsequent loss function called "categorical
 cross-entropy".
@@ -1312,7 +1336,7 @@ to a change in loss.
 With this formula, the program actually works.
 
 
-## CS224U - The Stanford NLP Podcast
+# CS224U - The Stanford NLP Podcast
 
 Rishi Bommasani had an academic team that spent six months independently
 reproducing GPT-2 (because they thought it would be easy™). He says a
@@ -1321,6 +1345,8 @@ enough. Parameters "blow up". I guess it just diverges. He says they've talked
 to practitioners and the standard solution is to save checkpoints, detect the
 crash, roll back, *shuffle the training data* and try again.
 
+
+# Course 3 - Structuring machine learning projects
 
 ## Orthogonalization (C3W1L02)
 
@@ -1603,7 +1629,7 @@ approach that works best.
 This concludes course 3. Course 4 should get back to interesting stuff.
 
 
-## CS480/680 Lecture 19: Attention and Transformer Networks
+# CS480/680 Lecture 19: Attention and Transformer Networks
 
 Pascal Poupart, U Waterloo, Spring 2019. The name of the course is
 "Introduction to Machine Learning".
@@ -1645,10 +1671,12 @@ so I don't know what attention is really. Oh wait, he recaps at 11:50.
 
 This is great, will watch more later.
 
-## C2W1
+# The Coursera course - C2W1
 
 https://colab.research.google.com/drive/1PcfV25kctKwBSgDpzpVXFC13luLOcOq2
 
+
+# Course 4 - Convolutional neural networks
 
 ## Convolutional neural networks (C4W1)
 
@@ -1843,6 +1871,8 @@ a residual block. Just let all weights decay to 0 and that is what you get.
 
 So it makes sense a residual block probably shouldn't hurt performance.
 
+Me: It's a way to let the network learn some fine-tuning around every layer.
+
 
 ## Network in network (C4W2L05)
 
@@ -1979,10 +2009,12 @@ the past tense of any verb. Or the country-capital relation.
 
 my assignment to myself
 
--   grab imagenet data set, train a plain CNN on it, maybe exactly AlexNet
+-   grab a data set with labeled images, train a plain CNN on it, maybe exactly AlexNet
 -   implement data augmentation via mirroring and random cropping, measure improvement
 -   implement resnet, measure without data augmentation
 -   and measure with both
+
+CIFAR100 is a data set to use. low resolution.
 
 Resume computer vision playlist at week 3:
 https://www.youtube.com/watch?v=GSwYGkTfOKk&list=PLkDaE6sCZn6Gl29AoE31iwdVwSG-KnDzF&index=23
@@ -2050,3 +2082,286 @@ https://www.youtube.com/watch?v=GSwYGkTfOKk&list=PLkDaE6sCZn6Gl29AoE31iwdVwSG-Kn
     zeros but a vector embedding. But keep the output layers the same. Can we
     now include more words of context? Does training this net change the
     weights of the output layer much?
+
+
+## Object localization (C4W3L01)
+
+Wow you just have the nn spit out the coordinates and size of the bounding box.
+
+This seems bonkers.
+
+Output of the net is `[any_object_is_present, ...bbox, ...classes]`.
+
+Loss function is `(yhat_1 - y_1)^2` if y_1 = 0, otherwise the norm2 of the whole vector.
+
+Or, squared error for bbox coordinates, log likelihood loss for the classes,
+logistic regression loss for yhat_1, etc.
+
+
+## Landmark detection (C4W3L02)
+
+Output can be points you care about, where things are, on a picture
+
+Uses:
+- detecting emotion on a face
+- AR stuff in snapchat works, putting a crown or puppy nose on someone
+- pose detection
+
+
+## Object detection (C4W3L03)
+
+Sliding windows detection - sounds stupid, is in fact too slow
+
+
+## Convolutional implementation of sliding windows (C4W3L04)
+
+*   Sermanet et al., 2014, OverFeat: Integrated recognition, localization and
+    detection using convolutional networks.
+
+The idea is to turn the dense layers of your network into convolutional layers.
+Just make them be convolutional with a fairly large size, maybe 7x7 or more.
+Result is a whole image of probabilities, stride = the amount of pooling you've done.
+
+Possibly still with bounding box info, but now a bounding box for every offset
+in the image where you've run the algorithm. So kind of a lot of bounding boxes
+and probabilities left over at the end, see L07.
+
+Not much discussion of how actually to implement the loss function and
+backpropagation for this. I wonder if you're supposed to train on nicely
+cropped images, then rewire your model to do sliding windows.
+
+
+## Intersection over union (C4W3L06)
+
+Way of evaluating a bounding box produced by a neural network, relative to the
+bounding box in the label.
+
+Area of intersection divided by area of union. Kaggle often calls your output
+"correct" if IoU ≥ 1/2.
+
+No relation to IOUs as debt markers. Heh.
+
+
+## Non-max Suppression (C4W3L07)
+
+You'll end up with lots of bounding boxes. Select the max; and eliminate
+overlapping bounding boxes that are not the max.
+
+First standardize coordinates.
+
+Discard all boxes with probability < 0.6. While any boxes remain, pick the box
+with largest probability. Output that box. Discard any remaining box with IoU ≥
+0.5 with the box just output.
+
+If you are at the same time classifying things, errrr, well - he recommends
+just running the algorithm n_categories times.
+
+
+## Anchor boxes (C4W3L08)
+
+https://www.youtube.com/watch?v=RTlwl2bv0Tg&list=PLkDaE6sCZn6Gl29AoE31iwdVwSG-KnDzF&index=29
+
+*   Redmon et al., 2015, You Only Look Once: Unified real-time object detection.
+
+Network has multiple output "ports", called anchor boxes.
+
+    Output shape = (width, height, 1 + 4 + num_categories, num_anchor_boxes)
+
+where the 4 is because bounding boxes are represented as (cx, cy, bw, bh).
+
+But each one is a different shape in order to make there be a single "right
+answer" where the object should go, so training works. One anchor box gets good
+at recognizing objects in a horizontal orientation, and so on. When constructing training data, use IoU to decide which anchor box a given bounding-box 
+
+This lets different output units specialize for different shapes of object.
+Also lets you detect multiple things centered in the same grid cell.
+
+
+## Putting it together: YOLO algorithm (C4W3L09)
+
+YOLO = "You Only Look Once"
+
+Hey, we got there. Object detection.
+
+- how to label training data
+- how to interpret output using non-max suppression
+
+
+## Region proposals (C4W3L10)
+
+*   Girshik et al., 2013, Rich feature hierarchies for accurate object
+    detection and semantic segmentation.
+
+*   Girshik, 2015. Fast R-CNN.
+
+*   Ren et al., 2016. Faster R-CNN. Towards real-time object detection with
+    region proposal networks.
+
+An alternative to convolutional sliding windows.
+
+Run a segmentation algorithm to find, say, 2000 windows in the image on which
+to run your classifier. Improves your response to scale I guess.
+
+R-CNN: Propose regions. Classify proposed regions one at a time. Output label +
+bounding box. (Bounding box is within the region.)
+
+Fast R-CNN: Propose regions. Use convolutional sliding windows to classify all
+proposed regions.
+
+Faster R-CNN: Use convolutional network to propose regions.
+
+Still slower than YOLO.
+
+
+# Course 5 - Sequence models
+
+Two full weeks of content missing from the Youtube playlist. Tragic. I know a
+little bit about RNNs and LSTM so I'll give it a shot.
+
+
+## Basic models (C5W3L01)
+
+*   Sutskever et al., 2014. Sequence to sequence learning with neural networks
+
+*   Cho et al., 2014. Learning phrase representations using RNN encoder-decoder
+    for statistical machine translation.
+
+Video is from 2018 and talks about RNNs; I imagine that is all gone now.
+
+Sequence-to-sequence models are useful for audio and NLP.
+
+Encoder network reads the sentence and outputs a vector encoding the whole
+sentence. Decoder network generates the translation in the target language, one
+token at a time. No discussion of how to train this.
+
+Image captioning: take a convolutional net trained to recognize things, cut off
+the last layer which is about nicely formatting the output; take the raw output
+of the next-to-last layer as your vector representation of what's in the image.
+Feed that to a decoder RNN.
+
+*   Mao et al., 2014. Deep captioning with multimodal recurrent neural
+    networks.
+
+*   Vinyals et al., 2014. Show and tell: neural image caption generator.
+
+*   Karpathy and Li, 2015. Deep visual-semantic alignments for generating image
+    descriptions.
+
+
+## Picking the most likely sentence (C5W3L02)
+
+P(y|x) is the probability of output sentence y given input x.
+
+Goal: Find the y that maximizes P(y|x) for a given x. Beam search is how we do
+this - next video (which is missing from the playlist).
+
+Greedy search, picking the most likely first word first, does not work well.
+(Ng offers a hand-wavy argument.)
+
+
+## Beam search (C5W3L03)
+
+Not in the playlist, ugh - found it though: https://www.youtube.com/watch?v=RLWuzLLSIgw
+
+Parameter B = "beam width" - consider multiple likely sequences. At each
+location in the output, try extending each of the B stored sequences-so-far
+with each possible next word; select the B most likely combinations to carry
+forward.
+
+    P(y1,y2|x) = P(y1|x) * P(y2|x,y1)
+
+You will be storing the whole internal state of the network times B, not just
+the most likely sequences.
+
+B=1 is greedy search.
+
+I guess after you reach EOS in one fork, you can set that aside and proceed
+with the other possibilities as long as they are more likely 
+
+
+## Refining beam search (C5W3L04)
+
+https://www.youtube.com/watch?v=gb__z7LlN_4
+
+1.  Instead of actually multiplying probabilities (producing vanishingly small
+    numbers), add up logs (producing reasonable negative numbers).
+
+2.  To reduce the penalty for longer sentences, which is a bit extreme,
+    multiply by `1 / len(y)**α` where α is a parameter in 0..1.
+
+    Normalized log probability objective.
+
+In production systems, beam width of 10 is common. For benchmarks, 100, 1000,
+3000, but it's wasteful.
+
+Not guaranteed to find maximum -- but you could prune instead... hrmmmm.
+
+
+## Error analysis of beam search (C5W3L05)
+
+https://www.youtube.com/watch?v=ZGUZwk7xIwk
+
+Suppose the output of beam search `yhat` is much worse than some known good
+output `y`.
+
+You can directly compute P(y|x) and P(yhat|x). If P(y|x) is greater, the
+problem is that beam search failed to find the most likely output.
+
+If P(yhat|x) is greater, the RNN simply isn't learning the desired function.
+
+You can do this for many examples, make a spreadsheet, and see if beam search
+or the RNN is more often to blame.
+
+
+## Bleu score (C5W3L06)
+
+*   Papineni et al., 2002. Bleu: A method for automatic evaluation of machine
+    translation. Recommended paper.
+
+Bleu: bilingual evaluation understudy
+
+This requires one or more "reference translations".
+
+Precision: Does the machine-translation output appear in any reference?
+
+Modified precision: Only give credit for a word appearing up to the maximum
+number of times it appears in any reference; so if the output is "the the the
+the the the the" and the reference is "The cat is on the mat", the modified
+precision will be 2/7.
+
+Generalizes to n-grams:
+
+    p[n] = sum[g∈n-grams in yhat] count_clip(g) / number of n-rams in yhat
+
+Max score is 1.0.
+
+Bleu score on bigrams, example:
+
+    Reference 1: The cat is on the mat.
+    Reference 2: There is a cat on the mat.
+    MT output: The cat the cat on the mat.
+
+Of 6 bigrams in the output, 4 appear in a reference ("The cat" in reference 1
+but only once; and "cat on" "on the" "the mat" in reference 2). Score = 4/6.
+
+The combined Blue score is: `BP exp(1/4 * sum(p[n] for n=1 to 4))`.
+
+The brevity penalty BP penalizes very short translations, since otherwise you
+could get a score of 1.0 by guessing a single word that appears in a reference:
+
+    min_len = min(len(r) for r in references)
+    BP = 1                             if len(yhat) > min_len
+         exp(1 - len(yhat) / min_len   otherwise.
+
+This accelerated the entire field of machine translation by creating a metric
+of competition.
+
+You can just download code for this and use it to evaluate your system.
+
+This is not used in speech recognition as there's usually a single right answer.
+
+## Recurrent neural networks (C5W1)
+
+Found C5W1: https://www.youtube.com/watch?v=IV8--Y3evjw
+
+C5W2: https://www.youtube.com/watch?v=36XuT5c9qvE

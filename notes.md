@@ -2362,6 +2362,109 @@ This is not used in speech recognition as there's usually a single right answer.
 
 ## Recurrent neural networks (C5W1)
 
-Found C5W1: https://www.youtube.com/watch?v=IV8--Y3evjw
+https://www.youtube.com/watch?v=IV8--Y3evjw
 
-C5W2: https://www.youtube.com/watch?v=36XuT5c9qvE
+
+### Why sequence models? (C5W1L01)
+
+sure
+
+
+### Notation (C5W1L02)
+
+-   inputs and outputs `x<t>` and `y<t>`, with the `<t>` as superscript
+    (I will continue to just write `x[t]`)
+
+-   `T_x` and `T_y`, number of tokens in the input/output
+
+-   In a batch, `x(i)<t>` is term `t` of training example `i`,
+    `T_x(i)` its length, etc.
+
+Word representations: one-hot vectors. finite vocabulary, special token for
+anything not in the vocabulary ("`<UNK>`").
+
+
+### Recurrent neural network model (C5W1L03)
+
+Why: A standard network wouldn't automatically share features learned at
+different positions in text.
+
+Explanation of the architecture. The initial input is typically a vector of
+zeros. Some researchers initialize it randomly.
+
+Ng is not going to draw the circuit diagrams. Prefers unrolled. Fine I guess.
+
+Weights in the first example are `W_ax`, `W_aa`, and `W_ya`.
+
+    a[0] = 0
+    a[t] = g_a(W_aa @ a[t-1] + W_ax @ x[t] + b_a)
+
+    yh[t] = g_y(W_ya @ a[t] + b_y)
+
+Or, smooshing the weight matrices together:
+
+    a[t] = g_a(W_a @ [a[t-1], x[t]] + b_a)
+
+tanh apparently a pretty common choice in RNNs. "other ways to address vanishing gradient problem which we'll talk about later this week".
+
+
+### Backpropagation through time (C5W1L04)
+
+Define elementwise loss `L<T>`. The example here is named entity recognition,
+so output is a 0 or 1 per token (i.e. per time step) and he uses the logistic
+loss function, a.k.a. binary cross-entropy loss.
+
+Overall loss is the sum of these terms.
+
+To train I guess you forward-propagate a full example (complete sentence)
+through the entire unrolled network, collecting intermediate computed values;
+then backpropagate from the loss values, particularly backward through `W_a`.
+
+Here there's an output at every step, which means there is a potential signal
+from any word we get wrong to our weight matrices. Kind of surprising if this
+works well, but let's continue.
+
+
+### Different types of RNNs (C5W1L05)
+
+"The unreasonable effectiveness of recurrent neural networks", Karpathy blog
+post.
+
+Many examples of different architectures. I wonder if the machine translation
+type is hard to train, the encoder weights being so far removed from the loss.
+
+
+### Language model and sequence generation (C5W1L06)
+
+Probability of a sentence.
+
+Jumps straight into an RNN actually trying to predict. Later loops back and
+shows a little probability-of-x-given-y notation, kind of assumes you know it
+though.
+
+We feed `x[1]=0` to the first cycle of the RNN, predicting P(y[0]=i)
+for all i; from then on `x[t]=y[t-1]`.
+
+Softmax loss function at each time step; total loss is the sum.
+
+
+### Sampling novel sequences (C5W1L07)
+
+Basically what I did. Means my network is not learning well, not surprising
+since it is not an RNN and only gets 4 tokens of context.
+
+A disadvantage of a character-level language model is that you end up with much
+longer sequences. Expensive to train and run. Oh, I guess this explains the
+existence of tiktoken. Can represent all strings, more or less efficiently.
+
+Up next, some challenges of training RNNs, like vanishing gradients.
+
+
+### Gated recurrent unit (GRU) (C5W1L08)
+
+https://www.youtube.com/watch?v=IV8--Y3evjw&t=3911s
+
+
+## C5W2
+
+https://www.youtube.com/watch?v=36XuT5c9qvE

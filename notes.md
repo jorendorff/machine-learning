@@ -2433,6 +2433,10 @@ post.
 Many examples of different architectures. I wonder if the machine translation
 type is hard to train, the encoder weights being so far removed from the loss.
 
+encoder = from input natural language to vector representation
+
+decoder = from vector representation to output natural language
+
 
 ### Language model and sequence generation (C5W1L06)
 
@@ -2460,11 +2464,130 @@ existence of tiktoken. Can represent all strings, more or less efficiently.
 Up next, some challenges of training RNNs, like vanishing gradients.
 
 
-### Gated recurrent unit (GRU) (C5W1L08)
+### Vanishing gradients with RNNs (C5W1L08)
+
+I wonder: The problem brings to mind resnets.
+
+I wonder what structure these complex neural nets are inferring and how we
+would crack them open and find out. Surely people are working on this right
+now.
+
+I wonder: You could visualize this by drawing a heatmap of ∂L/∂p for params
+across the network. Would it really bear out? And is the cause that there are
+just too many inputs (I doubt it; they all have an impact, one having an impact
+does not take away from the others having an impact) or that the same
+parameters are used many times and have contradictory effects on the output?
+
+Vanishing gradients are the more common problem.
+
+Exploding gradients are easier to spot and can be fixed with "gradient
+clipping", a relatively robust solution. (!)
+
+
+### Gated recurrent unit (GRU) (C5W1L09)
+
+*   Cho et al., 2014. On the properties of neural machine translation.
+    Encoder-decoder approaches.
+
+*   Chung et al., 2014. Empirical evaluation of gated recurrent neural networks
+    on sequence modeling.
 
 https://www.youtube.com/watch?v=IV8--Y3evjw&t=3911s
 
+"Modification to the RNN hidden layer
+that makes it much better at capturing long-range connections
+and helps a lot with the vanishing gradient problem."
 
-## C5W2
+There is a memory cell c being carried forward through time.
+
+There is at each time step a candidate c~ for replacing c.
+
+    c~[t] = tanh(w_c @ r_[c[t-1], x[t]] + b_c)
+
+There is an update gate in [0,1].
+
+    Γ_u = σ(w_u @ r_[c[t-1], x[t]] + b_u)
+
+    c[t] = Γ_u * c~[t] + (1 - Γ_u) * c[t-1]
+
+I wonder: Doesn't the signal decay slightly (but exponentially) with every time
+step?
+
+This is a "GRU unit". I imagine you have these alongside the normal units in
+your RNN. As usual you can have a bunch of these units, and then `w_c` and
+`w_u` are matrices and the `*`s in the last line are element-wise multiplication.
+`Γ_u` tells which bits of the memory to update.
+
+Full GRU has an additional gating factor Γ_r that controls how relevant c[t-1]
+is to the computation of c~[t].
+
+    Γ_r = σ(w_r @ r_[c[t-1], x[t]] + b_r)
+    c~[t] = tanh(w_c @ r_[Γ_r * c[t-1], x[t]] + b_c)
+    Γ_u = σ(w_u @ r_[c[t-1], x[t]] + b_u)
+    c[t] = Γ_u * c~[t] + (1 - Γ_u) * c[t-1]
+
+This seems unmotivated. It was discovered through experimentation with many
+alternatives that this one works pretty well.
+
+Literature contains much inconsistent notation.
+
+
+### LSTM (long short-term memory) unit (C5W1L10)
+
+*   Hochreiter & Schmidhuber 1997. Long short-term memory. "[G]oes quite a lot
+    into the theory of vanishing gradients".
+
+The equations are:
+
+    c~[t] = tanh(w_c @ r_[a[t-1], x[t]] + b_c)
+    Γ_u = σ(w_u @ r_[a[t-1], x[t]] + b_u)        # update gate
+    Γ_f = σ(w_f @ r_[a[t-1], x[t]] + b_f)        # forget gate
+    Γ_o = σ(w_o @ r_[a[t-1], x[t]] + b_o)        # output gate
+    c[t] = Γ_u * c~[t] + Γ_f * c[t-1]
+    a[t] = Γ_o * tanh(c[t])
+
+A common variation ("peephole connection") also feeds `c[t-1]` to the four
+computations that use `a[t-1]` and `x[t]`, in such a way that element 5 of
+`c[t-1]` affects only the fifth element of `Γ_u` and so on.
+
+This gives the network the option of at the same time retaining `c[t-1]` (by
+setting `Γ_f = 1`) and adding `c~[t]` to it (by setting `Γ_u = 1`).
+
+Disappointingly thin on explanation and theory. I need help understanding
+what's actually going on.
+
+
+### Bidirectional RNN (BRNN) (C5W1L11)
+
+Two separate neural networks, one of which receives the input reversed. Combine
+them to determine yh.
+
+Forward propagation in the reverse half of a bidirectional RNN goes backward in
+time. The graph is acyclic.
+
+    yh[t] = g(w_y @ r_[a_fwd[t], a_rev[t]] + b_y)
+
+The diagram has two boxes for each time step. These blocks can be RNN units, or
+GRU or LSTM units.
+
+As of 2017, BRNN w/LSTM was a reasonable first thing to try for NLP.
+
+
+### Deep RNNs (C5W1L12)
+
+It's a grid, with RNN/GRU/LSTM cells, arrows pointing "up" through the sequence
+of layers from input to prediction, and "right" from earlier to later time steps.
+
+It's also common for the final layers of the network to *not* be connected
+horizontally, just a regular non-recurrent output net producing the final
+prediction.
+
+Because RNNs are very expensive to train (think about it) we don't see as many
+deep recurrent layers as you would in a conventional deep neural net.
+
+This concludes course 5 week 1.
+
+
+## NLP and word embeddings (C5W2)
 
 https://www.youtube.com/watch?v=36XuT5c9qvE

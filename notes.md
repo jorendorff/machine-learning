@@ -1023,7 +1023,8 @@ for it.
 `tf.nn.batch_normalization`.
 
 Does this require larger mini-batches? It seems you could get unlucky and have
-an input go haywire just from bad luck.
+an input go haywire just from bad luck. (The layer normalization paper says
+that this does depend on batch sizes.)
 
 
 ## Why does batch norm work? (C2W3L06)
@@ -2351,7 +2352,7 @@ could get a score of 1.0 by guessing a single word that appears in a reference:
 
     min_len = min(len(r) for r in references)
     BP = 1                             if len(yhat) > min_len
-         exp(1 - len(yhat) / min_len   otherwise.
+         exp(1 - len(yhat) / min_len)  otherwise.
 
 This accelerated the entire field of machine translation by creating a metric
 of competition.
@@ -2591,3 +2592,532 @@ This concludes course 5 week 1.
 ## NLP and word embeddings (C5W2)
 
 https://www.youtube.com/watch?v=36XuT5c9qvE
+
+copyright struck just before i got to watch it :( The content does not appear
+to be available anywhere.
+
+
+## Convolutional neural networks: Applications (C4W4)
+
+More content I didn't even know was there.
+
+https://www.youtube.com/watch?v=-FfMVnwXrZ0&list=PLpFsSf5Dm-pd5d3rjNtIXUHT-v7bdaEIe&index=131
+
+### Face recognition
+
+#### What is face recognition? (C4W4L01)
+
+Two problems:
+- verification (binary yes/no)
+- recognition (check an image against a database of faces)
+
+Recognition is dramatically harder and requires verification to be very solved
+
+
+#### One-shot Learning (C4W4L02)
+
+Learning to recognize a person from a single example picture.
+
+There is not enough training data to do this at all.
+
+Instead, learn a "similarity" function on pictures of people.
+
+
+#### Siamese network (C4W4L03)
+
+*   Taigman et al., 2014. DeepFace: closing the gap to human level performance.
+
+Introduces the notion of vector encodings.
+
+The idea of running two identical CNNs on two images, and then comparing the
+output, is sometimes called a Siamese network. (Silly term.)
+
+The network learns parameters so that norm2(f(x[i]) - f(x[j])) reflects
+similarity.
+
+I wonder: Is there some theory that predicts how many dimensions you need to be
+confident such a function exists?
+
+I wonder: What's the loss function you use to learn this function? What's the
+training data? I imagine a series of input pairs and boolean outputs (x[0],
+x[1], y) and a single output neuron that makes use of only the norm, which has
+only 2 parameters (and they might be of interest at the end) and a sigmoid
+activation function. This means that all "large enough" norm2 values are mapped
+extremely close to 0.
+
+But I'm concerned about having enough training data for the most difficult
+cases, where two faces are quite similar but not the same person.
+
+
+#### Triplet loss (C4W4L04)
+
+*   Schroff et al., 2015. FaceNet: A unified embedding for face recognition and
+    clustering.
+
+Oh, weird. So this is different, you're just trying to make triplets work out.
+I don't know about this honestly. Shouldn't you train extra on the most
+difficult cases?
+
+OK, so you pick some margin α, and your objective is to have a margin of α
+between any two pictures of two different faces. (Ng mentions support vector
+machines.)
+
+I wonder: How good are humans at this task? I would have guessed not so very
+good, say 99% or 99.9% -- on the verification task. Might not be good enough
+for the recognition task. I'm personally terrible at the recognition task.
+
+Given 3 images A, P, N (anchor, positive, negative), the loss function is:
+
+    L(A, P, N) = max(d(A, P) - d(A, N) + α, 0)
+    where d(A, B) = norm2(f(A) - f(B))**2
+
+This means if the margin is at least α, there's no gradient at all. Only
+failures train.
+
+However... I'm a little iffy on turning this into a working system, because
+there's information missing. You're training so that the margin exists; but the
+"volume" of the space a person's face occupies can vary from person to person.
+You could train the network to 0 loss, but still fail to answer the question!
+
+You need pairs (A, P), so the training data must include pictures that are the
+same person.
+
+("that're" spotted in the wild)
+
+Again, only failures train. So if you choose N randomly, it will typically be a
+person who looks nothing like A, your network will easily get this right, and
+then you learn nothing from the example. Ng hints that you need to do adaptive
+training, using the parameters in the network to find "difficult" cases in your
+data set and train on those.
+
+Some face recognition systems are trained on tens of millions of pictures. It's
+very hard to find enough training data. You can download a pretrained model.
+
+
+#### Face verification and binary classification (C4W4L05)
+
+(back to the Taigman DeepFace paper)
+
+Another way to learn the similarity function: take two pictures and do logistic
+regression.
+
+This was the most obvious idea, which I actually wrote down after watching L03.
+It is slightly different in that:
+
+-   they apply some weights to individual dimensions of the vector space;
+    I assumed you'd rather have the network learn to scale those in upstream
+    layers so that they're all nicely scaled in the vector representations,
+    and you can actually use the norm2 on those vectors.
+
+-   They use `abs(u[k] - v[k])` i.e. the norm1 on each dimension rather than
+    the norm2. I remember from a previous video that the norm1 is sometimes
+    used where tiny differences matter a lot!
+
+    chi-squared difference along each dimension is sometimes used,
+    `(u[k] - v[k])**2 / (u[k] + v[k])`, and other possibilities explored in the
+    DeepFace paper.
+
+Both this approach and the triplet loss function work quite well.
+
+
+### Neural style transfer
+
+#### What are deep ConvNets learning? (C4W4L07)
+
+*   Zeiler and Fergus, 2013. Visualizing and understanding convolutional networks.
+
+How to visualize:
+
+For each unit in layer 1, go through your training data and find the nine image
+patches that maximize that unit's activation. Display those.
+
+Ng showed examples from the paper. Fascinating, it doesn't seem possible
+really. Tempted to do it with the very stupid examples from the Coursera class.
+
+
+#### Cost function (C4W4L08)
+
+*   Gatys et al., 2015. A neural algorithm of artistic style.
+
+The problem is to take a content image C and a style image S, and produce a
+single image G that has the content of C and the style of S.
+
+The loss is
+
+    J(G) = α * J_content(C, G) + β * J_style(S, G)
+
+Now
+
+1. Initialize the image G randomly.
+
+2. By gradient descent, minimize J(G).
+
+
+#### Content cost function (C4W4L09)
+
+Prediction: I think you need to train a single net on lots of images, not just
+the two target images, and use that net to define `J_content` and `J_style`.
+Alternatively you could train a net from scratch solely with random crops from
+the two images but I don't think that will work well.
+
+Prediction: Both `J_content` and `J_style` can be defined in terms of the
+activation of all the cells in the network. Obviously `J_content` will weight
+cells later in the last layers of the net more heavily while `J_style` will
+focus on earlier layers. Similarity is the dot product; loss is -log that or
+something. So that
+
+    J_content(C, G) = -log dot(late_layer_activations(C), late_layer_activations(G))
+    J_style(S, G) = -log dot(early_layer_activations(S), early_layer_activations(G))
+
+Actual:
+
+- instead of dot product (similarity) the paper uses squared norm2 (distance) so no `-log`
+- not weighting layers or neurons because there's nothing to train those weights
+
+
+#### Style cost function (C4W4L10)
+
+Style is defined as the correlation between activations across channels (at a
+given layer).
+
+Style matrix:
+
+Let `a[l][i,j,k]` = activation of layer l at pixel (i, j), channel k.
+
+Compute a style matrix G for layer l and style image S, and it will be an
+nc x nc (nc = number-of-channels) square matrix:
+
+    G[l](S)[k1,k2] = sum_i sum_j a[l][i,j,k1] * a[l][i,j,k2]
+
+(in linear algebra, the "G" is for "gram matrix")
+
+"I've been using the term 'correlation'. Technically this is the unnormalized
+cross-covariance."
+
+Compute the style matrix also for G.
+
+So the style cost function is just the Frobenius norm of the matrices squared, and the
+original authors use a normalization factor `1/(2 * W_l * H_l * nc_l)**2`.
+
+You get prettier results if you use the style function on multiple layers, weighted.
+
+I notice: this is a lot more complicated than the content cost function. I
+wondered if this means style is more sophisticated than content. But then the
+network will have been trained to find the content.
+
+
+### Convolutional networks in 1D or 3D
+
+#### 1D and 3D generalizations of models (C4W4L11)
+
+I knew all this.
+
+
+
+## NLP: Sequence-to-sequence models (C5W3, continued)
+
+### Attention model intuition (C5W3L07)
+
+*   Bahdanau et al., 2014. Neural machine translation by jointly learning to
+    align and translate.
+
+OK, the basic idea here is that we will use a bidirectional RNN on the input
+token sequence to generate some activations, then feed those activations to
+another RNN which uses them to decide what part of the sentence to focus on.
+
+It's still somewhat fuzzy to me because it seems like it could not possibly
+work this way. There is an inherent lock-step quality to the relationship
+between input tokens and output tokens.
+
+
+### Attention model (C5W3L08)
+
+*   Xu et al., 2015. Show attention and tell: neural image caption generation
+    with visual attention.
+
+OK, so you have an input bidirectional RNN and an output RNN. The output RNN
+needs data, which comes in the form of a *context vector* `c`, build from the
+input RNN's activations like so:
+
+    c_i = sum_t'  α<1, t'> * a<t'>
+
+where `a<t'>` consists of both forward and backward activations in the
+bidirectional RNN at time step `t'`.
+
+α<i, j> gives the attention we pay to input step `j` at output step `i`. These
+α are called the *attention weights*, and they're computed using a small neural
+network that takes `s<t-1>` (activations of the previous time step of the
+output RNN) and `a<t'>` as inputs.
+
+The softmax activation is applied to the attention weights at each output time
+step.
+
+There are two notions of time in play here; we must compute activations for the
+entire input series (across all `t'`) before starting to crank the output RNN
+(`t`).
+
+The algorithm is quadratic (`nt * nt'` attention weights must be computed).
+
+Attention is easily visualized with an input-time-vs-output-time heatmap.
+
+
+### Speech recognition (C5W3L09)
+
+A common pre-processing step is to run an FFT, "Filter-bank outputs" etc.
+
+The human ear does something similar.
+
+This problem was once broken down into producing phonemes and then producing
+transcripts from phonemes, but that isn't how it's done now.
+
+(as of 2017) The best commercial systems are trained on 100,000+ hours of
+transcribed speech.
+
+An attention model works for this problem. Or,
+
+*   Graves et al., 2006. Connectionist temporal classification: Labeling
+    unsegmented sequence data with recurrent neural entworks.
+
+This is some kind of network, maybe a deep bidirectional RNN, that produces
+output like `ttth_eee___ __qqqqqqquu___iii_` for the start of "the quick brown
+fox". (collapse repeated characters not separated by blanks `_`). The idea is
+that you'll always have plenty of output slots for all the letters you want to
+spit out. After the frequency pre-processing, you'll have maybe 10 samples
+(each one giving energy levels at a range of frequencies) per second.
+
+
+### Trigger word detection (C5W3L10)
+
+"literature still evolving" as of 2017.
+
+I notice: Can't to bidirectional, at least not very much...
+
+First slide shows an RNN that outputs 0 if the trigger word hasn't been said, 1
+if it has been "recently" said; training is easier if you leave it at 1 for
+some time, so training isn't so dependent on exact timing and there are
+reasonable numbers of both 0s and 1s in the training data output.
+
+That's it.
+
+
+### Conclusion (C5W3L11)
+
+OK, and it's over. I really wish I could have seen the NLP week 2 videos.
+That was the part most relevant to my interests. Missed them by literally days.
+
+
+
+## Stanford CS224N: NLP with Deep Learning, Winter 2021
+
+### Lecture 1 - Intro & Word Vectors
+
+https://www.youtube.com/watch?v=rmVRLeJRkl4&list=PLoROMvodv4rOSH4v6133s9LFPRHjEmbmJ&index=1
+
+"In discussions about artificial intelligence, a lot of the time people focus
+on human brains, and the neurons buzzing by, and this intelligence that's meant
+to be inside people's heads, but I just wanted to focus for a moment on the
+role of language.
+
+"This is kind of controversial, but it's not necessarily the case that humans
+are much more intelligent than some of the higher apes like chimpanzees or
+bonobos. Chimpanzees and bonobos have been shown to be able to use tools, to
+make plans; and in fact chimps have much better short-term memory than human
+beings do. Relative to that, if you look through the history of life on earth,
+human beings developed language really recently. How recently, we kind of
+actually don't know, because there's no fossils that say, here's a language
+speaker. But most people estimate that language arose human beings somewhere in
+the range of 100,000 to a million years ago. Compared to the process of
+evolution of life on earth, that's blinking an eyelid. But that power --
+communication between human beings -- quickly set off our ascendancy over other
+creatures. It's interesting that the ultimate power turned out not be posionous
+fangs or being super fast or super big, but having the ability to communicate
+with other members of your tribe.
+
+"It was much more recently again that humans developed writing which allowed
+knowledge to be communicated across distances of time and space. That's only
+about 5,000 years old, the power of writing. In just a few thousand years, the
+ability to preserve and share knowledge took us from the bronze age to the
+smartphones and tablets of today."
+
+https://www.youtube.com/watch?v=rmVRLeJRkl4&t=361s or just after, echoing _The
+Origins of Life_ by Smith and Szathmary.
+
+The lecturer's purpose here, I suppose, is to aggrandize NLP, the topic of this
+course and his area of study.
+
+----
+
+word2vec skip-grams: Given a center word `c`, the model predicts context word
+`o` with probability
+
+    P(o|c) = softmax(dot(u[o], v[c]), dot(u, v[c]))
+
+Note that we are learning _two_ vectors per word w: `v[w]` when w is a center
+word, `u[w]` when w is a context word. This simplifies the math.
+
+Let me just think through the entire proposed model here.
+
+The function being computed is the likelihood of each `w` given center word `c`.
+
+So the input to the network is a one-hot vector with `c` lit up. The first
+layer produces an embedding `v[c]`, so the parameters to the first layer are
+simply the vectors `v`, a matrix with `n_vec` rows and `n_words` columns;
+and no nonlinear activation function.
+
+The second layer computes dot products of `v[c]` with all vectors `u[c]`. So
+the parameters to the second layer are simply the vectors `u`, a matrix with
+`n_words` rows and `n_vec` columns.
+
+Softmax is then applied to that; and categorical cross-entropy to the resulting
+probability distribution. I have all those pieces in MyML.
+
+----
+
+Let me rethink it using only what I saw in the paper.
+
+Let
+D = dimensionality, the size of the word representation vectors;
+V = vocabulary, the number of distinct tokens.
+
+Take CBOW first. You maintain as parameters a vector per word, `D*V` numbers.
+In the feedforward pass, you simply take the context words, average their
+vectors, then (conceptually) compute the similarity of this average vector with
+each word's representation; do softmax on this V-vector to obtain the output
+distribution. I could write that. They have a hack from this paper:
+
+*   Morin & Bengio, "Hierarchical probabilistic neural network language
+    model", 2005.
+    https://www.iro.umontreal.ca/~lisa/pointeurs/hierarchical-nnlm-aistats05.pdf
+
+Now skip-grams.
+
+I think it must be that you mark 2R results as the "correct" answers, and
+compute something that's like categorical cross-entropy (which I don't really
+understand), but different in that multiple answers can be right.
+
+The loss L(input, weights, expected) is
+
+    sum(for w in words: -log(1 - abs(actual[w] - expected[w])))
+
+where actual = the softmax above, only ...
+
+----
+
+I wonder if the difference between singular and plural words, i.e. the average
+of `v(sock) - v(socks)` over many singular-plural noun-pairs, is mainly along a
+single dimension of the vector. I think it would make sense either way. It
+would be interesting to see how that plays out for the other relations Mikolov
+et al. used for evaluation in the original word2vec paper.
+
+It seems clear that 300-vectors can record only 300 orthogonal distinctions for
+a given class of words... I wonder how much of the syntactic precision of GPT
+is down to these vectors.
+
+I wonder how much of the available surface area of the 300-sphere is actually
+occupied with words. I wonder if you can create a random projection from that
+hypersphere to the 3-sphere, for the purpose of making a UI to explore the
+vectors. I wonder if that produces different results from PCA or whatever.
+
+I wonder if you can tell when you've used too many dimensions, by the result
+being flat. There must be some measure of that -- whole dimensions of a
+point-set being _almost_ linearly dependent and thus superfluous. But it also
+seems like training would try pretty hard to make something of those
+dimensions, pushing them around in arbitrary ways. In the Bengio 2003
+architecture, you could tell by the larger model having learned to ignore those
+dimensions. In word2vec I don't know.
+
+I wonder if the sphere-iness of the vectors is (a) mathematically convenient;
+(b) a consequence of how they're computed; (c) theoretically relevant to the
+information being represented. I don't have good intuitions for how the surface
+of a sphere is really a super-rich manifold with "plenty of space" for complex
+relationships to stretch out across n-1 dimensions. I keep thinking kind of
+dumb thoughts, like that it doesn't make any sense to do vector math on these
+things, since it's not possible for A - B + C to be on the surface of the
+sphere. Of course if
+
+----
+
+At 41:59 he puts all the formulas on the board.
+
+    p(o|c) = softmax (\w -> dot(u[w], v[c])) o
+
+    J(θ) = -mean (\t -> sum (\j, -m <= j <= m, j ≠ 0 -> log P(w[t + j] | w[t])))
+
+So putting those together
+
+    J(u, v) = -mean (\t -> sum (\j, -m <= j <= m, j ≠ 0 ->
+                  log (softmax (\w -> dot(u[w], v[j])) (t + j))))
+
+Find the partial derivative of loss J with respect to every parameter. The ones
+for v are the easy ones. I won't repeat it here. It's just the chain rule
+forever.
+
+STANFORD POINT
+
+
+## Readings
+
+### "Attention is all you need" 2017
+
+https://arxiv.org/pdf/1706.03762v5.pdf
+
+Page 3 of the paper clearly lays out the model.
+
+
+### Ba et al. Layer normalization. 2016.
+
+https://arxiv.org/pdf/1607.06450.pdf
+
+An alternative to batch normalization.
+
+Background: Batch normalization is described in Andrew Ng's course. It can be
+applied to any layer in a neural net and it has two components. First, for each
+mini-batch, for each neuron in the layer, compute the mean and variance of the
+input to that neuron across the training samples in that mini-batch, and use
+this to normalize the input so that it's centered on 0 and has a variance of 1.
+Second, add learnable parameters to multiply and add to change the mean and
+variance of the input. (It could instead be seen as applying to the output
+of the previous layer; the present paper talks about normalizing inputs.)
+
+The paper notes two drawbacks of batch norm:
+
+-   It requires running averages of the input statistics. (I don't think this
+    means you use these during training, because the previous paragraph talks
+    about "the stochasticity from the *batch* statistics". I think it means you
+    are going to need these overall statistics in order to make predictions
+    after training is done. But then it wouldn't necessarily say *running*
+    average. So who knows.) In an RNN, the statistics often vary with sequence
+    length.
+
+-   Can't be applied if the mini-batches are small (and sometimes they have to
+    be small).
+
+So generally the idea is, transpose this idea and normalize using the
+statistics across the whole layer, separately for each training case, rather
+than statistics across training cases but separately for each unit in the
+model.
+
+
+
+
+## Random musings
+
+My new favorite ML paper is
+
+*   Rajpurkar, Jia, & Liang. "Know what you don't know: unanswerable questions
+    for SQuAD". 2018. https://arxiv.org/abs/1806.03822
+
+For two reasons.
+
+1.  The introduction contains a fantastic run of 6 citations of papers
+    introducing new data sets and 5 citations of papers introducing innovative
+    model architectures, underlining the power of contributions on the data
+    side. There is a dual nature to the field that's very appealing.
+
+2.  The paper is about artificial humility, the property I miss so much in
+    ChatGPT. Someone noticed the problem and did something about it!
+
+NLP as a field is hitting problems that have been obvious in standardized
+testing (like the SAT) for a century, but NLP doesn't have the various forces
+holding them back from solving them -- and the researchers working on these
+problems happen to be some of the most brilliant people in the world.

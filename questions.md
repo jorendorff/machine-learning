@@ -59,6 +59,8 @@ the downhill direction? More to the point, does training actually converge at
 these saddle points -- do our optimization algorithms find "minima" even in the
 most generous sense of the word? If so, why?
 
+<doi:10.1038/nature14539> "Deep learning"
+
 **High-dimension intuition, usefulness of:** It seems like imagining progress
 in machine learning depends on intuitions about high-dimensional spaces. *Do*
 practitioners still think about this stuff?

@@ -50,4 +50,6 @@ def test_layer(rng, layer, input_shape):
 rng = default_rng()
 test_layer(rng, myml.LinearLayer((1, 1)), (1, 1))
 test_layer(rng, myml.LinearLayer((3, 5)), (5, 1))
-test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 1)), (6, 4, 1, 1))
+test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 1)), (1, 4, 6, 1))
+test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 3)), (2, 4, 6, 3))
+

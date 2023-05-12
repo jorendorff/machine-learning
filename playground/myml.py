@@ -1,6 +1,3 @@
-# TODO - swizzle all the Conv2D stuff to make example-index the first axis.
-
-
 import numpy as np
 import numba
 import math
@@ -264,8 +261,8 @@ def conv2d_impl(images, kernel):
     Implementation is after <https://stackoverflow.com/a/64660822>.
     """
 
-    # height, width, number of channels, number of images in batch
-    xh, xw, xc, xn = images.shape
+    # number of images in batch, height, width, number of channels
+    xn, xh, xw, xc = images.shape
     # number of outputs, height, width, number of channels
     kn, kh, kw, kc = kernel.shape
     if kc != xc:
@@ -273,7 +270,7 @@ def conv2d_impl(images, kernel):
 
     ow = xw - kw + 1
     oh = xh - kh + 1
-    out = np.zeros((oh, ow, kn, xn), dtype=images.dtype)
+    out = np.zeros((xn, oh, ow, kn), dtype=images.dtype)
     for t in range(xn):
         for j in range(kh):
             for i in range(kw):
@@ -281,15 +278,15 @@ def conv2d_impl(images, kernel):
                     for oc in range(kn):
                         for y in range(oh):
                             for x in range(ow):
-                                out[y, x, oc, t] += \
-                                    kernel[oc, j, i, ic] * images[y + j, x + i, ic, t]
+                                out[t, y, x, oc] += \
+                                    kernel[oc, j, i, ic] * images[t, y + j, x + i, ic]
     return out
 
 
 def conv2d_dk(images, dz):
     """ Compute derivatives of loss with respect to Conv2D kernel parameters. """
-    xh, xw, xc, xn = images.shape
-    zh, zw, zc, zn = dz.shape
+    xn, xh, xw, xc = images.shape
+    zn, zh, zw, zc = dz.shape
     if zn != xn:
         raise ValueError(f"incompatible number of samples: images={xn}, dz={zn}")
     kw = xw - zw + 1
@@ -303,19 +300,19 @@ def conv2d_dk(images, dz):
                         for oy in range(zh):
                             for ox in range(zw):
                                 dk[co, ky, kx, ci] += \
-                                    images[oy + ky, ox + kx, ci, t] * dz[oy, ox, co, t]
+                                    images[t, oy + ky, ox + kx, ci] * dz[t, oy, ox, co]
     return dk
 
 
 def conv2d_dx(kernel, dz):
     """Compute derivatives of loss with respect to Conv2D input image pixels."""
     kc, kh, kw, xc = kernel.shape
-    zh, zw, zc, n = dz.shape
+    n, zh, zw, zc = dz.shape
     if kc != zc:
         raise ValueError(f"incompatible number of channels: kernel={kc}, dz={zc}")
     xh = zh + kh - 1
     xw = zw + kw - 1
-    dx = np.zeros((xh, xw, xc, n))
+    dx = np.zeros((n, xh, xw, xc))
     for t in range(n):
         for ky in range(kh):
             for kx in range(kw):
@@ -323,8 +320,8 @@ def conv2d_dx(kernel, dz):
                     for co in range(zc):
                         for zy in range(zh):
                             for zx in range(zw):
-                                dx[zy + ky, zx + kx, ci, t] += \
-                                    kernel[co, ky, kx, ci] * dz[zy, zx, co, t]
+                                dx[t, zy + ky, zx + kx, ci] += \
+                                    kernel[co, ky, kx, ci] * dz[t, zy, zx, co]
     return dx
 
 
@@ -377,12 +374,12 @@ class Pad2DLayer(Layer):
     def apply(self, _params, x):
         py = self.pad_y
         px = self.pad_x
-        return numpy.pad(x, ((py, py), (px, px), (0, 0), (0, 0)))
+        return numpy.pad(x, ((0, 0), (py, py), (px, px), (0, 0)))
 
     def derivatives(self, _params, _x, dz, _out):
         y = self.pad_y
         x = self.pad_x
-        return dz[y:-y,x:-x,:,:]
+        return dz[:,y:-y,x:-x,:]
 
 
 class Conv2dSameLayer(Sequence):

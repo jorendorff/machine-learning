@@ -325,10 +325,10 @@ def conv2d_dx(kernel, dz):
     return dx
 
 
-# njit = numba.njit(cache=True, parallel=True, fastmath=True)
-# conv2d_impl = njit(conv2d_impl)
-# conv2d_dk = njit(conv2d_dk)
-# conv2d_dx = njit(conv2d_dx)
+njit = numba.njit(cache=True, parallel=True, fastmath=True)
+conv2d_impl = njit(conv2d_impl)
+conv2d_dk = njit(conv2d_dk)
+conv2d_dx = njit(conv2d_dx)
 
 
 class Conv2DValidLayer(Layer):
@@ -348,6 +348,9 @@ class Conv2DValidLayer(Layer):
         return oc * kh * kw * ic
 
     def apply(self, params, x):
+        # If this assertion fails, reshape the input images with something like
+        # `images[..., np.newaxis]`.
+        assert len(x.shape) == 4, "input must have shape (N, height, width, channels)"
         kernel = params.reshape(self.kernel_shape)
         return conv2d_impl(x, kernel)
 
@@ -462,7 +465,7 @@ class Model:
 
     def train_epochs(self, epochs):
         for i, epoch in enumerate(epochs):
-            print(f"epoch {i} - \x1b[s", end="")
+            print(f"epoch {i} - \x1b[s", end="", flush=True)
             n_total = 0
             loss_total = 0
             accuracy_total = 0
@@ -478,5 +481,5 @@ class Model:
                     accuracy = accuracy_total / n_total
                     print("\x1b[u" + 50 * " " + "\x1b[u"
                           + f"loss={loss:.4f} accuracy={accuracy:.4f}",
-                          end="")
+                          end="", flush=True)
             print()

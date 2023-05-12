@@ -1,4 +1,8 @@
+# TODO - swizzle all the Conv2D stuff to make example-index the first axis.
+
+
 import numpy as np
+import numba
 import math
 
 
@@ -6,12 +10,27 @@ class Layer:
     def num_params(self):
         return 0
 
+    def apply(self, params, x):
+        """Return the output of this layer, given the `params` and the input `x`.
+
+        `x` is a NumPy ndarray where the *last* axis is the training mini-batch axis.
+        For example, if the inputs are 640x480 images, and there are 10 of them in the
+        current mini-batch, then `x.shape == (640, 480, 10)`.
+
+        The output is a NumPy ndarray where the last axis is again the training
+        mini-batch axis.
+        """
+        raise NotImplementedError("missing apply method")
+
 
 class FlattenLayer(Layer):
     """Reshape inputs to matrix form.
 
     This layer takes inputs with example-index as the first axis and any number of other axes.
     It reshapes and transposes the data into a 2D matrix where each column is one example.
+
+    That is, the input shape is `(num_examples, *input_shape)`
+    and the output shape is `(product(input_shape), num_examples)`.
     """
     def __init__(self, input_shape):
         self.input_shape = input_shape
@@ -23,7 +42,7 @@ class FlattenLayer(Layer):
         return y
 
     def derivatives(self, _params, x, dz, _out):
-        return dz.reshape((-1,) + self.input_shape)
+        return dz.T.reshape((-1,) + self.input_shape)
 
 
 class LinearLayer(Layer):
@@ -75,6 +94,7 @@ class LinearLayer(Layer):
 
 class ActivationLayer(Layer):
     """ Applies the same nonlinear activation function to all outputs. """
+
     def apply(self, _params, x):
         return self.f(x)
 
@@ -143,6 +163,21 @@ class Sequence(Layer):
         return dz
 
 
+class Residual(Layer):
+    def __init__(self, inner):
+        self.inner = inner
+
+    def num_params(self):
+        return self.inner.num_params()
+
+    def apply(self, params, x):
+        return x + self.inner.apply(params, x)
+
+    def derivatives(self, params, x, dz, out):
+        dx = self.inner.derivatives(params, x, dz, out)
+        return dx + dz
+
+
 class SoftmaxLayer(Layer):
     def apply(self, _params, x):
         x = np.where(x > 400, 400, x) # avoid warning
@@ -177,7 +212,6 @@ class LogisticLoss:
         return np.mean(-np.log(np.where(y == 0, 1 - yh, yh)))
 
     def deriv(self, y, yh):
-
         """Partial derivative of loss with respect to yh."""
         # When y == 0, we want the derivative of -log(1-yh)/n, or 1/(n*(1-yh)).
         # When y == 1, we want the derivative of -log(yh)/n, or -1/(n*yh).
@@ -209,6 +243,163 @@ class CategoricalCrossEntropyLoss:
     def accuracy(self, y, yh):
         predictions = np.argmax(yh, axis=0)
         return np.mean(predictions == y)
+
+
+# Note: We assume throughout that indexes into images are like
+# `images[y, x, channel, image_index]`.
+#
+# And for kernels: `kernel[output_channel, ky, kx, image_channel]`.
+#
+# Kernel sizes are (height, width) to match this (y, x) order.
+
+
+def conv2d_impl(images, kernel):
+    """ Convolve matrices in 2D as needed for a convolutional neural network.
+
+    The shape of `images` is (img_width, img_height, num_img_channels, num_images).
+    The shape of `kernel` is (num_output_channels, knl_width, knl_height, num_img_channels).
+    Note that `num_img_channels` must agree.
+    The output shape is (new_img_width, new_img_height, num_output_channels, num_images).
+
+    Implementation is after <https://stackoverflow.com/a/64660822>.
+    """
+
+    # height, width, number of channels, number of images in batch
+    xh, xw, xc, xn = images.shape
+    # number of outputs, height, width, number of channels
+    kn, kh, kw, kc = kernel.shape
+    if kc != xc:
+        raise ValueError(f"incompatible number of channels: images={xc}, kernel={kc}")
+
+    ow = xw - kw + 1
+    oh = xh - kh + 1
+    out = np.zeros((oh, ow, kn, xn), dtype=images.dtype)
+    for t in range(xn):
+        for j in range(kh):
+            for i in range(kw):
+                for ic in range(xc):
+                    for oc in range(kn):
+                        for y in range(oh):
+                            for x in range(ow):
+                                out[y, x, oc, t] += \
+                                    kernel[oc, j, i, ic] * images[y + j, x + i, ic, t]
+    return out
+
+
+def conv2d_dk(images, dz):
+    """ Compute derivatives of loss with respect to Conv2D kernel parameters. """
+    xh, xw, xc, xn = images.shape
+    zh, zw, zc, zn = dz.shape
+    if zn != xn:
+        raise ValueError(f"incompatible number of samples: images={xn}, dz={zn}")
+    kw = xw - zw + 1
+    kh = xh - zh + 1
+    dk = np.zeros((zc, kh, kw, xc))
+    for t in range(xn):
+        for ky in range(kh):
+            for kx in range(kw):
+                for ci in range(xc):
+                    for co in range(zc):
+                        for oy in range(zh):
+                            for ox in range(zw):
+                                dk[co, ky, kx, ci] += \
+                                    images[oy + ky, ox + kx, ci, t] * dz[oy, ox, co, t]
+    return dk
+
+
+def conv2d_dx(kernel, dz):
+    """Compute derivatives of loss with respect to Conv2D input image pixels."""
+    kc, kh, kw, xc = kernel.shape
+    zh, zw, zc, n = dz.shape
+    if kc != zc:
+        raise ValueError(f"incompatible number of channels: kernel={kc}, dz={zc}")
+    xh = zh + kh - 1
+    xw = zw + kw - 1
+    dx = np.zeros((xh, xw, xc, n))
+    for t in range(n):
+        for ky in range(kh):
+            for kx in range(kw):
+                for ci in range(xc):
+                    for co in range(zc):
+                        for zy in range(zh):
+                            for zx in range(zw):
+                                dx[zy + ky, zx + kx, ci, t] += \
+                                    kernel[co, ky, kx, ci] * dz[zy, zx, co, t]
+    return dx
+
+
+# njit = numba.njit(cache=True, parallel=True, fastmath=True)
+# conv2d_impl = njit(conv2d_impl)
+# conv2d_dk = njit(conv2d_dk)
+# conv2d_dx = njit(conv2d_dx)
+
+
+class Conv2DValidLayer(Layer):
+    """2D convolution with no padding."""
+
+    def __init__(self, kernel_shape):
+        """kernel_shape must be (num_output_channels, height, width, num_img_channels).
+
+        For example, to use 64 different 3x3 kernels on a grayscale image,
+        use `(64, 3, 3, 1)`.
+        """
+        assert len(kernel_shape) == 4
+        self.kernel_shape = kernel_shape
+
+    def num_params(self):
+        oc, kh, kw, ic = self.kernel_shape
+        return oc * kh * kw * ic
+
+    def apply(self, params, x):
+        kernel = params.reshape(self.kernel_shape)
+        return conv2d_impl(x, kernel)
+
+    def derivatives(self, params, x, dz, out):
+        out[:] = conv2d_dk(x, dz).reshape(out.shape)
+        kernel = params.reshape(self.kernel_shape)
+        return conv2d_dx(kernel, dz)
+
+
+class Pad2DLayer(Layer):
+    """Add padding around each 2D input."""
+
+    def __init__(self, y, x):
+        """Make a padding layer.
+
+        y - int - number of cells to add at the start and end of each column
+        x - int - the same but for rows
+
+        The input shape of the layer is (height, width, num_channels, num_images).
+        """
+        self.pad_y = y
+        self.pad_x = x
+
+    def apply(self, _params, x):
+        py = self.pad_y
+        px = self.pad_x
+        return numpy.pad(x, ((py, py), (px, px), (0, 0), (0, 0)))
+
+    def derivatives(self, _params, _x, dz, _out):
+        y = self.pad_y
+        x = self.pad_x
+        return dz[y:-y,x:-x,:,:]
+
+
+class Conv2dSameLayer(Sequence):
+    """2D convolution with zero-padding to keep the same size."""
+
+    def __init__(self, kernel_shape):
+        oc, kh, kw, ic = kernel_shape
+        if kh % 2 != 1:
+            raise ValueError(f"kernel height must be an odd number (got {kh})")
+        if kw % 2 != 1:
+            raise ValueError(f"kernel width must be an odd number (got {kw})")
+        pad_x = (kw - 1) // 2
+        pad_y = (kh - 1) // 2
+        Sequence.__init__(self, [
+            Pad2DLayer(pad_x, pad_y),
+            Conv2DValidLayer(kernel_shape)
+        ])
 
 
 def unit_vector(v):
@@ -282,6 +473,7 @@ class Model:
                 n = len(x)
                 n_total += n
                 self.train(x, y)
+
                 if n > 0:
                     loss_total += self.last_loss * n
                     accuracy_total += self.last_accuracy * n

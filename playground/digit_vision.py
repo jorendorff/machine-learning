@@ -102,7 +102,7 @@ def show_a_batch(mnist_data):
 
 def main():
     mnist_data = mnist.load_data()
-    show_a_batch(mnist_data)
+    #show_a_batch(mnist_data)
     
     model = create_and_train_model(mnist_data)
     show_failures(mnist_data, model)

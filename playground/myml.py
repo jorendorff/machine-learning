@@ -369,7 +369,7 @@ class Pad2DLayer(Layer):
         y - int - number of cells to add at the start and end of each column
         x - int - the same but for rows
 
-        The input shape of the layer is (height, width, num_channels, num_images).
+        The input shape of the layer is (num_images, height, width, num_channels).
         """
         self.pad_y = y
         self.pad_x = x
@@ -400,6 +400,40 @@ class Conv2dSameLayer(Sequence):
             Pad2DLayer(pad_x, pad_y),
             Conv2DValidLayer(kernel_shape)
         ])
+
+
+class MaxPooling2DLayer(Layer):
+    """ Max pooling operation for image data.
+
+    The input shape is (num_images, height, width, num_channels).
+    """
+    def __init__(self, size=2):
+        self.size = 2
+
+    def apply(self, _params, x):
+        ni, h, w, nc = x.shape
+        pad_y = (-h) % self.size
+        pad_x = (-w) % self.size
+        if pad_x or pad_y:
+            x = np.pad(x, ((0, 0), (0, pad_y), (0, pad_x), (0, 0)))
+            w += pad_w
+            h += pad_h
+        out_w = w // self.size
+        out_h = h // self.size
+        x_grouped_1 = x.reshape((ni, out_h, self.size, w, nc))
+        x_chosen_1 = np.amax(x_grouped_1, 2)
+        x_grouped_2 = x_chosen_1.reshape((ni, out_h, out_w, self.size, nc))
+        x_chosen_2 = np.amax(x_grouped_2, 3)
+        return x_chosen_2
+
+    def derivatives(self, _params, x, dz, _out):
+        _ni, h, w, _nc = x.shape
+        z = self.apply(_params, x)
+        # ∂z/∂x is 1 exactly where an element's value is equal to the max,
+        # and 0 elsewhere.
+        m = np.repeat(np.repeat(z, self.size, axis=1), self.size, axis=2)[:,:h,:w,:]
+        dz_stretched = np.repeat(np.repeat(dz, self.size, axis=1), self.size, axis=2)[:,:h,:w,:]
+        return np.where(x == m, 1.0, 0.0) * dz_stretched
 
 
 def unit_vector(v):

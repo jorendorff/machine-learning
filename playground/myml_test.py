@@ -81,14 +81,6 @@ test_layer(rng, myml.Sequence([
 test_layer(rng, myml.Sequence([
     myml.Conv2DValidLayer((32, 3, 3, 1)),
     myml.ReluLayer(),
-    myml.Conv2DValidLayer((32, 3, 3, 32)),
-    myml.ReluLayer(),
-    myml.FlattenLayer((24, 24, 32)),
-    myml.LinearLayer((625, 24 * 24 * 32)),
-    myml.ReluLayer(),
-    myml.LinearLayer((100, 625)),
-    myml.ReluLayer(),
-    myml.LinearLayer((10, 100)),
-    myml.SoftmaxLayer(),
+    myml.MaxPooling2DLayer(),
 ]), (1, 28, 28, 1))
 

@@ -416,8 +416,8 @@ class MaxPooling2DLayer(Layer):
         pad_x = (-w) % self.size
         if pad_x or pad_y:
             x = np.pad(x, ((0, 0), (0, pad_y), (0, pad_x), (0, 0)))
-            w += pad_w
-            h += pad_h
+            w += pad_x
+            h += pad_y
         out_w = w // self.size
         out_h = h // self.size
         x_grouped_1 = x.reshape((ni, out_h, self.size, w, nc))

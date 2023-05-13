@@ -60,6 +60,9 @@ test_layer(rng, myml.LinearLayer((1, 1)), (1, 1))
 test_layer(rng, myml.LinearLayer((3, 5)), (5, 1))
 test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 1)), (1, 4, 6, 1))
 test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 3)), (2, 4, 6, 3))
+test_layer(rng, myml.MaxPooling2DLayer(2), (1, 6, 6, 3))
+test_layer(rng, myml.MaxPooling2DLayer(2), (1, 3, 3, 3))
+test_layer(rng, myml.MaxPooling2DLayer(3), (1, 4, 5, 3))
 
 test_layer(rng, myml.Sequence([
     myml.LinearLayer((10, 10)),

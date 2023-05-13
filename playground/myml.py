@@ -335,7 +335,11 @@ conv2d_dx = njit(conv2d_dx)
 
 
 class Conv2DValidLayer(Layer):
-    """2D convolution with no padding."""
+    """2D convolution with no padding.
+
+    In addition to the convolution kernel, each output channel gets a bias, a
+    constant added to each pixel of that channel.
+    """
 
     def __init__(self, kernel_shape):
         """kernel_shape must be (num_output_channels, height, width, num_img_channels).
@@ -348,18 +352,22 @@ class Conv2DValidLayer(Layer):
 
     def num_params(self):
         oc, kh, kw, ic = self.kernel_shape
-        return oc * kh * kw * ic
+        return oc * kh * kw * ic + oc
 
     def apply(self, params, x):
         # If this assertion fails, reshape the input images with something like
         # `images[..., np.newaxis]`.
         assert len(x.shape) == 4, "input must have shape (N, height, width, channels)"
-        kernel = params.reshape(self.kernel_shape)
-        return conv2d_impl(x, kernel)
+        oc = self.kernel_shape[0]
+        kernel = params[:-oc].reshape(self.kernel_shape)
+        bias = params[-oc:]
+        return conv2d_impl(x, kernel) + bias
 
     def derivatives(self, params, x, dz, out):
-        out[:] = conv2d_dk(x, dz).reshape(out.shape)
-        kernel = params.reshape(self.kernel_shape)
+        oc, kh, kw, ic = self.kernel_shape
+        out[:-oc] = conv2d_dk(x, dz).reshape((oc * kh * kw * ic,))
+        out[-oc:] = dz.sum(axis=2).sum(axis=1).sum(axis=0)
+        kernel = params[:-oc].reshape(self.kernel_shape)
         return conv2d_dx(kernel, dz)
 
 

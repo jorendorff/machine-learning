@@ -26,15 +26,18 @@ class FlattenLayer(Layer):
     This layer takes inputs with example-index as the first axis and any number of other axes.
     It reshapes and transposes the data into a 2D matrix where each column is one example.
 
-    That is, the input shape is `(num_examples, *input_shape)`
+    That is, the actual input shape is `(num_examples, *input_shape)`
     and the output shape is `(product(input_shape), num_examples)`.
     """
+
     def __init__(self, input_shape):
         self.input_shape = input_shape
 
     def apply(self, _params, x):
         n = x.shape[0]
-        assert x.shape[1:] == self.input_shape
+        if x.shape[1:] != self.input_shape:
+            sizes = repr(self.input_shape)[1:-1]
+            raise ValueError(f"Expected shape (N, {sizes}), got {x.shape!r}")
         y = x.reshape((n, -1)).T
         return y
 
@@ -389,7 +392,7 @@ class Conv2dSameLayer(Sequence):
     """2D convolution with zero-padding to keep the same size."""
 
     def __init__(self, kernel_shape):
-        oc, kh, kw, ic = kernel_shape
+        _oc, kh, kw, ic = kernel_shape
         if kh % 2 != 1:
             raise ValueError(f"kernel height must be an odd number (got {kh})")
         if kw % 2 != 1:

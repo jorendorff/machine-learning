@@ -1,9 +1,16 @@
 import numpy as np
 import numba
 import math
+import functools
 
 
 class Layer:
+    def input_shape(self):
+        raise NotImplementedError("missing input_shape method")
+
+    def output_shape(self):
+        raise NotImplementedError("missing output_shape method")
+
     def num_params(self):
         return 0
 
@@ -20,29 +27,55 @@ class Layer:
         raise NotImplementedError("missing apply method")
 
 
+class InputLayer(Layer):
+    """Layer that does nothing but specify the shape of the data coming in."""
+
+    def __init__(self, shape):
+        self.shape = shape
+
+    def input_shape(self):
+        return self.shape
+
+    def output_shape(self):
+        return self.shape
+
+    def apply(self, _params, x):
+        return x
+
+    def derivatives(self, _params, _x, dz, _out):
+        return dz
+
+
 class FlattenLayer(Layer):
     """Reshape inputs to matrix form.
 
     This layer takes inputs with example-index as the first axis and any number of other axes.
     It reshapes and transposes the data into a 2D matrix where each column is one example.
 
-    That is, the actual input shape is `(num_examples, *input_shape)`
-    and the output shape is `(product(input_shape), num_examples)`.
+    That is, the actual input shape is `(num_examples, *example_shape)`
+    and the output shape is `(product(example_shape), num_examples)`.
     """
 
-    def __init__(self, input_shape):
-        self.input_shape = input_shape
+    def __init__(self, example_shape):
+        self.example_shape = example_shape
+
+    def input_shape(self):
+        return ('N', *self.example_shape)
+
+    def output_shape(self):
+        prd = functools.reduce(lambda a, b: a * b, self.example_shape, 1)
+        return (prd, 'N')
 
     def apply(self, _params, x):
         n = x.shape[0]
-        if x.shape[1:] != self.input_shape:
-            sizes = repr(self.input_shape)[1:-1]
+        if x.shape[1:] != self.example_shape:
+            sizes = repr(self.example_shape)[1:-1]
             raise ValueError(f"Expected shape (N, {sizes}), got {x.shape!r}")
         y = x.reshape((n, -1)).T
         return y
 
     def derivatives(self, _params, x, dz, _out):
-        return dz.T.reshape((-1,) + self.input_shape)
+        return dz.T.reshape((-1,) + self.example_shape)
 
 
 class LinearLayer(Layer):
@@ -50,6 +83,12 @@ class LinearLayer(Layer):
 
     def __init__(self, shape):
         self.shape = shape
+
+    def input_shape(self):
+        return (self.shape[1], 'N')
+
+    def output_shape(self):
+        return (self.shape[0], 'N')
 
     def num_params(self):
         no, ni = self.shape
@@ -95,6 +134,12 @@ class LinearLayer(Layer):
 class ActivationLayer(Layer):
     """ Applies the same nonlinear activation function to all outputs. """
 
+    def input_shape(self):
+        return 'X'
+
+    def output_shape(self):
+        return 'X'
+
     def apply(self, _params, x):
         return self.f(x)
 
@@ -129,9 +174,99 @@ class ReluLayer(ActivationLayer):
         return np.where(x >= 0, 1, 0)
 
 
+class Add:
+    def __init__(self, *args):
+        self.args = args
+
+    def __str__(self):
+        expr = ' + '.join(str(a) for a in self.args)
+        return f"({expr})"
+
+
+class DivRoundUp:
+    def __init__(self, n, d):
+        self.n = n
+        self.d = d
+
+    def __str__(self):
+        return f"({self.n} / {self.d} rounding up)"
+
+
+def apply_shape(actual_shape, layer):
+    input_shape = layer.input_shape()
+    # maps layer's variables to shape-expressions in terms of actual_shape's variables.
+    bindings = {}
+
+    def unify(expr, pattern):
+        if isinstance(pattern, int):
+            if pattern != expr:
+                raise ValueError(f"shape mismatch: expected {pattern}, previous layer had {expr}")
+        elif isinstance(pattern, str):
+            assert pattern.isalpha()
+            if pattern in bindings:
+                if bindings[pattern] != expr:
+                    raise ValueError(f"error matching {actual_shape} to {layer.__class__.__name__} with input_shape {expected_shape}")
+            else:
+                bindings[pattern] = expr
+        elif isinstance(pattern, tuple):
+            if isinstance(expr, tuple):
+                if len(pattern) != len(expr):
+                    raise ValueError(f"shape mismatch: expected {pattern}, previous layer had {expr} (different number of dimensions)")
+                for e, p in zip(expr, pattern):
+                    unify(e, p)
+        else:
+            raise ValueError(f"unexpected input_shape {pattern}")
+
+    def eval_expr(expr):
+        if isinstance(expr, int):
+            return expr
+        elif isinstance(expr, str):
+            return bindings[expr]
+        elif isinstance(expr, tuple):
+            return tuple(eval_expr(x) for x in expr)
+        elif isinstance(expr, Add):
+            vals = [eval_expr(x) for x in expr.args]
+            if all(isinstance(v, int) for v in vals):
+                return sum(vals)
+            else:
+                return Add(*vals)
+        elif isinstance(expr, DivRoundUp):
+            n, d = eval_expr(expr.n), eval_expr(expr.d)
+            if isinstance(n, int) and isinstance(d, int):
+                return (n + d - 1) // d
+            else:
+                return DivRoundUp(n, d)
+        else:
+            raise ValueError(f"unexpected type of output_shape {expr!r} ({expr.__class__.__name__})")
+
+    unify(actual_shape, layer.input_shape())
+    out = eval_expr(layer.output_shape())
+    return out
+
+
 class Sequence(Layer):
     def __init__(self, layers):
         self.layers = layers
+        self._out_shape = functools.reduce(apply_shape, self.layers[1:], self.layers[0].output_shape())
+
+    def describe(self):
+        print('----')
+        shape = self.input_shape()
+        print("    shape:", shape)
+        for layer in self.layers:
+            if hasattr(layer, 'describe'):
+                layer.describe()
+            else:
+                print(f"  {layer.__class__.__name__} ({layer.num_params()} params)")
+                shape = apply_shape(shape, layer)
+                print("    shape:", shape)
+        print('----')
+
+    def input_shape(self):
+        return self.layers[0].input_shape()
+
+    def output_shape(self):
+        return self._out_shape
 
     def num_params(self):
         return sum(l.num_params() for l in self.layers)
@@ -167,6 +302,12 @@ class Residual(Layer):
     def __init__(self, inner):
         self.inner = inner
 
+    def input_shape(self):
+        return self.inner.input_shape()
+
+    def output_shape(self):
+        return self.inner.output_shape()
+
     def num_params(self):
         return self.inner.num_params()
 
@@ -183,6 +324,12 @@ class SoftmaxLayer(Layer):
         x = np.where(x > 400, 400, x) # avoid warning
         ex = np.exp(x)
         return ex / np.sum(ex, axis=0)
+
+    def input_shape(self):
+        return ('X', 'N')
+
+    def output_shape(self):
+        return ('X', 'N')
 
     def derivatives(self, _params, x, dz, _out):
         ex = np.exp(x)
@@ -350,6 +497,13 @@ class Conv2DValidLayer(Layer):
         assert len(kernel_shape) == 4
         self.kernel_shape = kernel_shape
 
+    def input_shape(self):
+        return ('N', 'H', 'W', self.kernel_shape[3])
+
+    def output_shape(self):
+        oc, kh, kw, _ic = self.kernel_shape
+        return ('N', Add('H', 1 - kh) , Add('W', 1 - kw), oc)
+
     def num_params(self):
         oc, kh, kw, ic = self.kernel_shape
         return oc * kh * kw * ic + oc
@@ -421,6 +575,12 @@ class MaxPooling2DLayer(Layer):
     def __init__(self, size=2):
         self.size = 2
 
+    def input_shape(self):
+        return ('N', 'H', 'W', 'C')
+
+    def output_shape(self):
+        return ('N', DivRoundUp('H', self.size), DivRoundUp('W', self.size), 'C')
+
     def apply(self, _params, x):
         ni, h, w, nc = x.shape
         pad_y = (-h) % self.size
@@ -468,6 +628,9 @@ class Model:
         self.last_loss = None
         self.last_params = None
         self.last_gradient = None
+
+    def describe(self):
+        self.seq.describe()
 
     def apply(self, x):
         return self.seq.apply(self.params, x)

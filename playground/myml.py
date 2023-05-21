@@ -441,7 +441,7 @@ def conv2d_dk(images, dz):
         raise ValueError(f"incompatible number of samples: images={xn}, dz={zn}")
     kw = xw - zw + 1
     kh = xh - zh + 1
-    dk = np.zeros((zc, kh, kw, xc))
+    dk = np.zeros((zc, kh, kw, xc), dtype=dz.dtype)
     for t in range(xn):
         for ky in range(kh):
             for kx in range(kw):
@@ -462,7 +462,7 @@ def conv2d_dx(kernel, dz):
         raise ValueError(f"incompatible number of channels: kernel={kc}, dz={zc}")
     xh = zh + kh - 1
     xw = zw + kw - 1
-    dx = np.zeros((n, xh, xw, xc))
+    dx = np.zeros((n, xh, xw, xc), dtype=dz.dtype)
     for t in range(n):
         for ky in range(kh):
             for kx in range(kw):
@@ -622,7 +622,7 @@ class Model:
         self.seq = seq
         nparams = seq.num_params()
         print(f"creating model with {nparams} parameters")
-        self.params = 0.02 * rng.standard_normal((nparams,))
+        self.params = 0.1 * rng.standard_normal((nparams,), dtype=np.float64)
         self.loss = loss
         self.learning_rate = 0.25
         self.last_loss = None
@@ -642,7 +642,7 @@ class Model:
         accuracy = self.loss.accuracy(y_train, yh)
 
         dyh = self.loss.deriv(y_train, yh)
-        dp = np.zeros((self.seq.num_params(),))
+        dp = np.zeros((self.seq.num_params(),), dtype=np.float64)
         _ = self.seq.derivatives(self.params, x_train, dyh, dp)
 
         if np.all(dp == 0.0):

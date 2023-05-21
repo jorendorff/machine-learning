@@ -7,8 +7,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 from keras.datasets import mnist
 
-from myml import (FlattenLayer, LinearLayer, ReluLayer, SigmoidLayer, SoftmaxLayer,
-                  Sequence, CategoricalCrossEntropyLoss, Model)
+from myml import (
+    InputLayer, FlattenLayer, LinearLayer, ReluLayer, SoftmaxLayer, Conv2DValidLayer,
+    MaxPooling2DLayer, Sequence, CategoricalCrossEntropyLoss, Model
+)
 import mnist_mutate
 
 
@@ -20,11 +22,13 @@ def training_epochs(mnist_data, rng, num_epochs, batch_size):
     def epoch(order):
         for j in range(0, n, batch_size):
             batch = order[j:j + batch_size]
-            x = mnist_mutate.mutate_images(rng, x_train[batch])
+            x = x_train[batch]
+            ## x = mnist_mutate.mutate_images(rng, x)
+
             # Convert to float and normalize pixel values to 0..1 - this makes a huge difference
             x = x / 255.0
-            yield x, y_train[batch]
-    
+            yield x[...,np.newaxis], y_train[batch]
+
     for i in range(num_epochs):
         yield epoch(rng.permutation(n))
 
@@ -35,21 +39,28 @@ def create_and_train_model(mnist_data):
     model = Model(
         rng,
         Sequence([
-            FlattenLayer((28, 28)),
-            LinearLayer((28 * 28, 500)),
+            InputLayer(('N', 28, 28, 1)),
+            Conv2DValidLayer((32, 3, 3, 1)),
             ReluLayer(),
-            LinearLayer((500, 100)),
+            MaxPooling2DLayer(2),
+            Conv2DValidLayer((32, 3, 3, 32)),
             ReluLayer(),
-            LinearLayer((100, 10)),
+            MaxPooling2DLayer(2),
+            FlattenLayer((6, 6, 32)),
+            LinearLayer((6 * 6 * 32, 128)),
+            ReluLayer(),
+            LinearLayer((128, 10)),
             SoftmaxLayer(),
         ]),
         CategoricalCrossEntropyLoss(),
     )
+    model.learning_rate = 0.15
 
+    model.describe()
 
     NUM_EPOCHS = 10
     t0 = time.time()
-    model.train_epochs(training_epochs(mnist_data, rng, NUM_EPOCHS, batch_size=100))
+    model.train_epochs(training_epochs(mnist_data, rng, NUM_EPOCHS, batch_size=50))
     dt = time.time() - t0
     print(f"trained {NUM_EPOCHS} epochs in {dt:0.3} seconds")
 
@@ -58,7 +69,7 @@ def create_and_train_model(mnist_data):
 
 def show_failures(mnist_data, model):
     (x_train, y_train), (x_test, y_test) = mnist_data
-    x_train, x_test = x_train / 255.0, x_test / 255.0
+    x_train, x_test = x_train[...,np.newaxis] / 255.0, x_test[...,np.newaxis] / 255.0
 
     n = x_test.shape[0]
     predicted_prob = model.apply(x_test)
@@ -99,6 +110,7 @@ def show_a_batch(mnist_data):
     for cell, img in enumerate(batch):
         axs.flat[cell].imshow(img)
     plt.show()
+
 
 def main():
     mnist_data = mnist.load_data()

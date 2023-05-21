@@ -5,7 +5,7 @@ use ndarray_rand::RandomExt;
 use crate::traits::{Layer, Loss};
 
 pub struct Model<DI, DO, Y> {
-    root: Box<dyn Layer<DI, DO>>,
+    root: Box<dyn Layer<DI, Output = DO>>,
     params: Array<f32, Ix1>,
     loss: Box<dyn Loss<DO, Y>>,
     learning_rate: f32,
@@ -16,7 +16,7 @@ where
     DI: Dimension,
     DO: Dimension,
 {
-    pub fn new(root: Box<dyn Layer<DI, DO>>, loss: Box<dyn Loss<DO, Y>>) -> Self {
+    pub fn new(root: Box<dyn Layer<DI, Output = DO>>, loss: Box<dyn Loss<DO, Y>>) -> Self {
         let n = root.num_params();
         Model {
             root,
@@ -26,18 +26,22 @@ where
         }
     }
 
-    pub fn apply(&self, x: &Array<f32, DI>) -> Array<f32, DO> {
-        self.root.apply(&self.params, &x)
+    /// Run the model on an array of examples.
+    pub fn apply(&self, x: ArrayView<'_, f32, DI>) -> Array<f32, DO> {
+        self.root.apply(self.params.view(), x)
     }
 
-    pub fn train(&mut self, x_train: &Array<f32, DI>, y_train: &Y, rate: f32) -> (f32, f32) {
-        let yh = self.apply(x_train);
-        let loss = self.loss.loss(y_train, &yh);
-        let accuracy = self.loss.accuracy(y_train, &yh);
+    /// Train the model on a batch of examples.
+    pub fn train(&mut self, x_train: ArrayView<'_, f32, DI>, y_train: &Y, rate: f32) -> (f32, f32) {
+        let yh = self.apply(x_train.clone());
+        let loss = self.loss.loss(y_train, yh.view());
+        let accuracy = self.loss.accuracy(y_train, yh.view());
 
-        let dyh = self.loss.deriv(y_train, &yh);
+        let dyh = self.loss.deriv(y_train, yh.view());
         let mut dp = Array::<f32, Ix1>::zeros((self.root.num_params(),).f());
-        let _ = self.root.derivatives(&self.params, &x_train, &dyh, &mut dp);
+        let _ = self
+            .root
+            .derivatives(self.params.view(), x_train, dyh.view(), dp.view_mut());
         if dp.iter().all(|x| *x == 0.0) {
             println!("gradient is 0");
             return (0.0, 1.0);
@@ -47,6 +51,7 @@ where
         (loss, accuracy)
     }
 
+    /// Train the model on a data set `epochs`.
     pub fn train_epochs<I, E>(&mut self, epochs: I)
     where
         I: IntoIterator<Item = E>,
@@ -73,7 +78,7 @@ where
                     progress = ((i - 1) as f32 + batch_progress) / (num_epochs - 1) as f32;
                 }
                 let (last_loss, last_accuracy) =
-                    self.train(&x, &y, self.learning_rate * (1.0 - progress));
+                    self.train(x.view(), &y, self.learning_rate * (1.0 - progress));
 
                 if n > 0 {
                     loss_total += last_loss * n as f32;

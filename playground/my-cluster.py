@@ -47,7 +47,7 @@ def main():
     model = Model(
         rng,
         Sequence([
-            LinearLayer((1, 2)),
+            LinearLayer((2, 1)),
             SigmoidLayer(),
         ]),
         LogisticLoss(),

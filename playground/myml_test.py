@@ -57,7 +57,7 @@ def test_layer(rng, layer, input_shape, *, error_limit=1e-5):
 
 rng = default_rng()
 test_layer(rng, myml.LinearLayer((1, 1)), (1, 1))
-test_layer(rng, myml.LinearLayer((3, 5)), (5, 1))
+test_layer(rng, myml.LinearLayer((5, 3)), (1, 5))
 test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 1)), (1, 4, 6, 1))
 test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 3)), (2, 4, 6, 3))
 test_layer(rng, myml.MaxPooling2DLayer(2), (1, 6, 6, 3))
@@ -67,19 +67,19 @@ test_layer(rng, myml.MaxPooling2DLayer(3), (1, 4, 5, 3))
 test_layer(rng, myml.Sequence([
     myml.LinearLayer((10, 10)),
     myml.ReluLayer(),
-]), (10, 2))
+]), (2, 10))
 
 test_layer(rng, myml.Sequence([
-    myml.LinearLayer((2, 4)),
+    myml.LinearLayer((4, 2)),
     myml.SoftmaxLayer(),
-]), (4, 3))
+]), (3, 4))
 
 test_layer(rng, myml.Sequence([
-    myml.LinearLayer((10, 30)),
+    myml.LinearLayer((30, 10)),
     myml.ReluLayer(),
-    myml.LinearLayer((4, 10)),
+    myml.LinearLayer((10, 4)),
     myml.SoftmaxLayer(),
-]), (30, 2))
+]), (2, 30))
 
 test_layer(rng, myml.Sequence([
     myml.Conv2DValidLayer((32, 3, 3, 1)),

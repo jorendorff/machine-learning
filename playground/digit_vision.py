@@ -36,11 +36,11 @@ def create_and_train_model(mnist_data):
         rng,
         Sequence([
             FlattenLayer((28, 28)),
-            LinearLayer((500, 28 * 28)),
+            LinearLayer((28 * 28, 500)),
             ReluLayer(),
-            LinearLayer((100, 500)),
+            LinearLayer((500, 100)),
             ReluLayer(),
-            LinearLayer((10, 100)),
+            LinearLayer((100, 10)),
             SoftmaxLayer(),
         ]),
         CategoricalCrossEntropyLoss(),
@@ -62,14 +62,14 @@ def show_failures(mnist_data, model):
 
     n = x_test.shape[0]
     predicted_prob = model.apply(x_test)
-    predictions = np.argmax(predicted_prob, axis=0)
+    predictions = np.argmax(predicted_prob, axis=1)
     failures = np.arange(n)[predictions != y_test]
 
     print("{}/{} test images misclassified ({:.1f}% accuracy)".format(
         len(failures), n, 100 * (n - len(failures)) / n))
 
     # Sort failures from most severe to least
-    predicted_prob_of_correct_answer = np.array([predicted_prob[y, i] for i, y in enumerate(y_test)])
+    predicted_prob_of_correct_answer = np.array([predicted_prob[i, y] for i, y in enumerate(y_test)])
     failures = [i for i in np.arange(n)[np.argsort(predicted_prob_of_correct_answer)]
                 if repr(predictions[i]) != repr(y_test[i])]
 
@@ -83,7 +83,7 @@ def show_failures(mnist_data, model):
         if cell >= H * W:
             break
         y = y_test[i]
-        print("img #{} is {}, predicted {} with P={}, P[{}]={}".format(i, y, predictions[i], predicted_prob[predictions[i],i], y, predicted_prob[y,i]))
+        print("img #{} is {}, predicted {} with P={}, P[{}]={}".format(i, y, predictions[i], predicted_prob[i,predictions[i]], y, predicted_prob[i,y]))
         axs.flat[cell].imshow(x_test[i], interpolation='bicubic')
 
     plt.show()

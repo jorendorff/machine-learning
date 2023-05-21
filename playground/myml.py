@@ -15,15 +15,7 @@ class Layer:
         return 0
 
     def apply(self, params, x):
-        """Return the output of this layer, given the `params` and the input `x`.
-
-        `x` is a NumPy ndarray where the *last* axis is the training mini-batch axis.
-        For example, if the inputs are 640x480 images, and there are 10 of them in the
-        current mini-batch, then `x.shape == (640, 480, 10)`.
-
-        The output is a NumPy ndarray where the last axis is again the training
-        mini-batch axis.
-        """
+        """Return the output of this layer, given the `params` and the input `x`."""
         raise NotImplementedError("missing apply method")
 
 
@@ -50,10 +42,10 @@ class FlattenLayer(Layer):
     """Reshape inputs to matrix form.
 
     This layer takes inputs with example-index as the first axis and any number of other axes.
-    It reshapes and transposes the data into a 2D matrix where each column is one example.
+    It flattens each example into a row, leaving a 2D matrix.
 
     That is, the actual input shape is `(num_examples, *example_shape)`
-    and the output shape is `(product(example_shape), num_examples)`.
+    and the output shape is `(num_examples, product(example_shape))`.
     """
 
     def __init__(self, example_shape):
@@ -64,18 +56,17 @@ class FlattenLayer(Layer):
 
     def output_shape(self):
         prd = functools.reduce(lambda a, b: a * b, self.example_shape, 1)
-        return (prd, 'N')
+        return ('N', prd)
 
     def apply(self, _params, x):
         n = x.shape[0]
         if x.shape[1:] != self.example_shape:
             sizes = repr(self.example_shape)[1:-1]
             raise ValueError(f"Expected shape (N, {sizes}), got {x.shape!r}")
-        y = x.reshape((n, -1)).T
-        return y
+        return x.reshape((n, -1))
 
     def derivatives(self, _params, x, dz, _out):
-        return dz.T.reshape((-1,) + self.example_shape)
+        return dz.reshape((-1,) + self.example_shape)
 
 
 class LinearLayer(Layer):
@@ -85,48 +76,50 @@ class LinearLayer(Layer):
         self.shape = shape
 
     def input_shape(self):
-        return (self.shape[1], 'N')
+        return ('N', self.shape[0])
 
     def output_shape(self):
-        return (self.shape[0], 'N')
+        return ('N', self.shape[1])
 
     def num_params(self):
-        no, ni = self.shape
-        return no * (ni + 1)
+        ni, no = self.shape
+        return (ni + 1) * no
 
     def apply(self, params, x):
-        no, ni = self.shape
-        w = params[:no * ni].reshape((no, ni))
-        b = params[no * ni:].reshape((no, 1))
-        return w @ x + b
+        ni, no = self.shape
+        assert len(x.shape) == 2
+        assert x.shape[1] == ni
+        w = params[:ni * no].reshape((ni, no))
+        b = params[ni * no:].reshape((1, no))
+        return x @ w + b
 
     def derivatives(self, params, x, dz, out):
         """Given x and ∂L/∂z at x, compute partial derivatives ∂L/∂x, ∂L/∂w, and ∂L/∂b.
 
         Store ∂L/∂w and ∂L/∂b in `out`, a 1D vector of derivatives. Return ∂L/∂x.
 
-        Backpropagation.
+        A step in backpropagation.
 
         dz[r,c] is the partial derivative of loss with respect to z[r,c]; that
         is, the partial derivative of the *rest* of the pipeline with respect to
         output r at training sample x[:,c].
         """
 
-        no, ni = self.shape # number of outputs, inputs
-        n = x.shape[1] # number of training samples
-        assert x.shape == (ni, n)
+        ni, no = self.shape # number of outputs, inputs
+        n = x.shape[0] # number of training samples
+        assert x.shape == (n, ni)
 
-        w = params[:no * ni].reshape((no, ni))
+        w = params[:ni * no].reshape((ni, no))
 
-        assert dz.shape == (no, n)
-        db = np.sum(dz, axis=1, keepdims=True)
-        assert db.shape == (no, 1)
-        dw = dz @ x.T
-        assert dw.shape == (no, ni)
-        out[:no * ni] = dw.ravel()
-        out[no * ni:] = db.ravel()
+        assert dz.shape == (n, no)
+        db = np.sum(dz, axis=0, keepdims=True)
+        assert db.shape == (1, no)
+        dw = x.T @ dz
+        assert dw.shape == (ni, no)
+        out[:ni * no] = dw.ravel()
+        out[ni * no:] = db.ravel()
 
-        dx = w.T @ dz
+        dx = dz @ w.T
         assert dx.shape == x.shape
         return dx
 
@@ -247,7 +240,13 @@ def apply_shape(actual_shape, layer):
 class Sequence(Layer):
     def __init__(self, layers):
         self.layers = layers
-        self._out_shape = functools.reduce(apply_shape, self.layers[1:], self.layers[0].output_shape())
+        shape = self.layers[0].output_shape()
+        for layer in self.layers[1:]:
+            try:
+                shape = apply_shape(shape, layer)
+            except ValueError as exc:
+                raise ValueError(f"error matching output shape {shape!r} of layer {layer!r} to input shape {layer.input_shape()!r} of layer {layer!r}") from exc
+        self._out_shape = shape
 
     def describe(self):
         print('----')
@@ -323,33 +322,33 @@ class SoftmaxLayer(Layer):
     def apply(self, _params, x):
         x = np.where(x > 400, 400, x) # avoid warning
         ex = np.exp(x)
-        return ex / np.sum(ex, axis=0)
+        return ex / np.sum(ex, axis=1, keepdims=True)
 
     def input_shape(self):
-        return ('X', 'N')
+        return ('N', 'X')
 
     def output_shape(self):
-        return ('X', 'N')
+        return ('N', 'X')
 
     def derivatives(self, _params, x, dz, _out):
         ex = np.exp(x)
-        sum_ex = np.sum(ex, axis=0, keepdims=True)
+        sum_ex = np.sum(ex, axis=1, keepdims=True)
 
         # Cell (i,j) of the result should be
-        #     sum(∂loss/∂z[k,j] * ∂z[k,j]/∂ex[i,j] * ∂ex[i,j]/∂x[i,j]
+        #     sum(∂loss/∂z[i,k] * ∂z[i,k]/∂ex[i,j] * ∂ex[i,j]/∂x[i,j]
         #         for k in range(no))
-        #   = sum(dz[k,j]
-        #         * ((sum_ex[1,j] if i == k else 0) - ex[k,j]) / sum_ex[1,j]**2
+        #   = sum(dz[i,k]
+        #         * ((sum_ex[i,1] if j == k else 0) - ex[i,k]) / sum_ex[i,1]**2
         #         * ex[i,j]
         #         for k in range(no))
-        #   = (ex[i,j] / sum_ex[1,j]**2)
-        #     * sum(dz[k,j] * ((sum_ex[1,j] if i == k else 0) - ex[k,j])
+        #   = (ex[i,j] / sum_ex[i,1]**2)
+        #     * sum(dz[i,k] * ((sum_ex[i,1] if i == k else 0) - ex[i,k])
         #           for k in range(no))
-        #   = (ex[i,j] / sum_ex[1,j]**2)
-        #     * (dz[i,j] * sum_ex[1,j]
-        #        - sum(dz[k,j] * ex[k,j] for k in range(no)))
+        #   = (ex[i,j] / sum_ex[i,1]**2)
+        #     * (dz[i,j] * sum_ex[i,1]
+        #        - sum(dz[i,k] * ex[i,k] for k in range(no)))
 
-        return (ex / sum_ex ** 2) * (dz * sum_ex - np.sum(dz * ex, axis=0, keepdims=True))
+        return (ex / sum_ex ** 2) * (dz * sum_ex - np.sum(dz * ex, axis=1, keepdims=True))
 
 
 class LogisticLoss:
@@ -363,37 +362,37 @@ class LogisticLoss:
         # When y == 0, we want the derivative of -log(1-yh)/n, or 1/(n*(1-yh)).
         # When y == 1, we want the derivative of -log(yh)/n, or -1/(n*yh).
         assert y.shape == yh.shape
-        no, n = y.shape
+        n, no = y.shape
         assert no == 1
         return 1.0 / (n * np.where(y == 0, 1 - yh, -yh))
 
 
 class CategoricalCrossEntropyLoss:
     def loss(self, y, yh):
-        c, n = yh.shape  # number of categories, number of examples
+        n, c = yh.shape  # number of examples, number of categories
         assert y.shape == (n,)
         assert y.dtype.kind in ('i', 'u')
         assert np.all((y >= 0) & (y < c))
         assert np.all((yh >= 0.0) & (yh <= 1.0))
-        return np.mean(-np.log(yh[y, np.arange(n)]))
+        return np.mean(-np.log(yh[np.arange(n), y]))
 
     def deriv(self, y, yh):
         ## There is a better way to say this but I don't remember it.
-        c, n = yh.shape
+        n, c = yh.shape
         assert y.shape == (n,)
-        column = np.arange(c)[:, np.newaxis]
-        assert column.shape == (c, 1)
-        mask = y[np.newaxis, :] == column
-        assert mask.shape == (c, n)
+        row = np.arange(c)[np.newaxis, :]
+        assert row.shape == (1, c)
+        mask = y[:, np.newaxis] == row
+        assert mask.shape == (n, c)
         return np.where(mask, -1.0 / (n * yh), 0)
 
     def accuracy(self, y, yh):
-        predictions = np.argmax(yh, axis=0)
+        predictions = np.argmax(yh, axis=1)
         return np.mean(predictions == y)
 
 
 # Note: We assume throughout that indexes into images are like
-# `images[y, x, channel, image_index]`.
+# `images[image_index, y, x, channel]`.
 #
 # And for kernels: `kernel[output_channel, ky, kx, image_channel]`.
 #

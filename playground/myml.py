@@ -639,7 +639,7 @@ class Model:
     def apply(self, x):
         return self.seq.apply(self.params, x)
 
-    def train(self, x_train, y_train):
+    def train(self, x_train, y_train, rate):
         yh = self.seq.apply(self.params, x_train)
         loss = self.loss.loss(y_train, yh)
 
@@ -665,33 +665,50 @@ class Model:
         ##             dp = self.last_gradient
         ##     else:
         ##         self.learning_rate *= 1.25
-        l = self.learning_rate
-
-        #print(f"loss={loss:.4f} accuracy={accuracy:.4f} λ={l}")
+        ## l = self.learning_rate
+        ## print(f"loss={loss:.4f} accuracy={accuracy:.4f} λ={l}")
 
         self.last_accuracy = accuracy
         self.last_loss = loss
         ## self.last_params = self.params
-        self.params = self.params - self.learning_rate * dp
+        self.params = self.params - rate * dp
         ## self.last_gradient = dp
 
     def train_epochs(self, epochs):
+        epochs = list(epochs)
+        pairs_per_epoch = 0
+        progress = 0.0
+
         for i, epoch in enumerate(epochs):
             print(f"epoch {i} - \x1b[s", end="", flush=True)
             n_total = 0
             loss_total = 0
             accuracy_total = 0
-            for x, y in epoch:
+
+            for j, (x, y) in enumerate(epoch):
                 n = len(x)
                 n_total += n
-                self.train(x, y)
+                if i > 0:
+                    batch_progress = min(n_total, pairs_per_epoch) / pairs_per_epoch
+                    progress = ((i - 1) + batch_progress) / (len(epochs) - 1)
+                self.train(x, y, self.learning_rate * (1.0 - progress))
 
                 if n > 0:
                     loss_total += self.last_loss * n
                     accuracy_total += self.last_accuracy * n
                     loss = loss_total / n_total
                     accuracy = accuracy_total / n_total
-                    print("\x1b[u" + 50 * " " + "\x1b[u"
-                          + f"loss={loss:.4f} accuracy={accuracy:.4f}",
+                    print("\x1b[u" + 78 * " " + "\x1b[u"
+                          + self._progress_bar(progress)
+                          + f" loss={loss:.4f} accuracy={accuracy:.4f}",
                           end="", flush=True)
+
+            if i == 0:
+                pairs_per_epoch = n_total
+
             print()
+
+    def _progress_bar(self, progress):
+        LEN = 40
+        n = int(LEN * min(progress, 1.0))
+        return '[{}{}]'.format(n * '#', (LEN - n) * ' ')

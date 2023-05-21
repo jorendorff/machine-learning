@@ -87,3 +87,25 @@ test_layer(rng, myml.Sequence([
     myml.MaxPooling2DLayer(),
 ]), (1, 28, 28, 1))
 
+# check that conv2d actually does anything reasonable
+c2d = myml.Conv2DValidLayer((2, 3, 3, 1))
+assert c2d.num_params() == 2 * 3 * 3 + 2
+out = c2d.apply(
+    np.array([
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0,
+
+        0.1, 0.2, 0.3,
+        0.01, 0.02, 0.03,
+        0.001, 0.002, 0.003,
+
+        10.0, 20.0,
+    ]),
+    np.array([
+        1.0, 0.0, 1.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0,
+    ]).reshape((1, 3, 3, 1)),
+)
+assert str(out) == "[[[[12.   20.42]]]]"

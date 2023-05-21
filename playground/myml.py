@@ -240,12 +240,17 @@ def apply_shape(actual_shape, layer):
 class Sequence(Layer):
     def __init__(self, layers):
         self.layers = layers
-        shape = self.layers[0].output_shape()
+        prev = self.layers[0]
+        shape = prev.output_shape()
         for layer in self.layers[1:]:
             try:
                 shape = apply_shape(shape, layer)
             except ValueError as exc:
-                raise ValueError(f"error matching output shape {shape!r} of layer {layer!r} to input shape {layer.input_shape()!r} of layer {layer!r}") from exc
+                raise ValueError(
+                    f"error matching output shape {shape!r} of layer {prev!r} "
+                    f"to input shape {layer.input_shape()!r} of layer {layer!r}"
+                ) from exc
+            prev = layer
         self._out_shape = shape
 
     def describe(self):

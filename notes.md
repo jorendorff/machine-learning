@@ -3097,6 +3097,160 @@ statistics across the whole layer, separately for each training case, rather
 than statistics across training cases but separately for each unit in the
 model.
 
+### Iandola et al. SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB model size. 2016.
+
+https://arxiv.org/abs/1602.07360
+
+Techniques:
+
+-   Use the "inception" technique of using kernels of _different_ sizes in the
+    same layer, and concatenate along the channel axis. This allows SqueezeNet
+    to use a lot of 1x1 kernels which have 1/9 as many parameters.
+
+    (Keras has a "Concatenate" layer that probably can do this trick, but it's
+    effectively undocumented.)
+
+-   Reduce the number of channels that flow into 3x3 filters. The basic module
+    of the architecture uses alternating layers of 1. a few 1x1 kernels to
+    reduce the number of channels by a factor of like 8, then 2. a mix of 1x1
+    and 3x3 kernels that increases the number of channels again.
+
+-   Postpone down-resolution (to keep precision while reducing number of
+    parameters). That makes the thing more computationally expensive, right?
+    Slower to train.
+
+This alone gets them to 50x, and then they apply other compression techniques
+from the literature -- as it happens, they work fine on the smaller network.
+With that they get to 500x.
+
+I'm not clear on how much stock we should put in the accuracy. It was not
+explicitly stated that they had separate dev and test sets...
+
+One cool thing I learned in this paper is a way to adapt the ResNet idea to
+situations where the block shrinks the data. You can take the bypassing data
+and run it through a dense layer (or if it's an image, a set of 1x1 filters)
+because that can produce exactly the number of outputs (channels) you want.
+
+
+### LeCun. Generalization and network design strategies. 1989.
+
+http://yann.lecun.com/exdb/publis/pdf/lecun-89.pdf
+
+The title is hopeful that this design has lessons that could apply in other
+contexts. Today this paper would have been called "OcuLORD: A deep
+convolutional network for identifying hand-written digits".
+
+"Although various successful applications of [backpropagation] have been
+described in the literature, the conditions in which good generalization
+performance can be obtained are not understood." Heh. Yeah.
+
+
+### Samuel et al. Trained on 100 million words and still in shape: BERT meets British National Corpus. 2023.
+
+https://arxiv.org/pdf/2303.09859v3.pdf
+
+I can't tell if it was trained in a single pass over the data, though, or
+multiple passes. I have read elsewhere that large models like GPT-4 typically
+never see the same data twice during training.
+
+
+### BLiMP: The Benchmark of Linguistic Minimal Pairs for English
+
+I looked up BLiMP, one of the instruments the previous paper used to evaluate
+the model, and it strikes me as quite strange. Here are some good and bad
+sentences from BLiMP:
+
+    1.  A - There were most brothers of Aaron baking.
+        B - There were many brothers of Aaron baking.
+
+    2.  A - Some guest knows one doctor and Patricia knows two nice.
+        B - Some guest knows one nice doctor and Patricia knows two.
+
+    3.  A - Only ladies ever wave.
+        B - Even ladies ever wave.
+
+    4.  A - Diana conceals who this actress that talked fled from.
+        B - Diana conceals that this actress that talked fled from.
+
+    5.  A - Every nephew of Carol has examined one book about and William's
+            husband has examined more smooth book about.
+        B - Every nephew of Carol has examined one purple book about and
+            William's husband has examined more smooth.
+
+Every sentence is quite improbable a priori.
+
+The problem is that both sentences in 5 are total gibberish.
+
+Another whole suite of questions, I think about 0.7% of the test, check whether
+you think "they" can have a singular referent; to get the questions right you
+have to indicate that "he" or "she" is better.
+
+There is something prescriptivist about any grammar test. They tried to confirm that the test is linked to real English usage by validating it with a crowd-sourced survey, and to their credit the repo is public and includes the raw results of the survey.
+
+Less flatteringly, the survey covers less than 400 of the 67,000 questions, and still there are a handful of questions in the survey where human subjects got them "wrong" more than half the time:
+
+    1. (45%)
+      A - It's himself that this cashier attacked.
+      B - It's himself that attacked this cashier.
+
+    2. (45%)
+      A - Kayla imagines Randolf sounds like herself.
+      B - Randolf imagines Kayla sounds like herself.
+
+    3. (45%)
+      A - Gary imagined most reports upset himself.
+      B - Gary imagined most reports upset themselves.
+
+    4. (40%)
+      A - All convertibles weren't there existing.
+      B - There weren't all convertibles existing.
+
+    5. (40%)
+      A - Kayla concealed who a lot of guests that were scaring many people
+          complain about.
+      B - Kayla concealed that a lot of guests that were scaring many people
+          complain about.
+
+    6. (40%)
+      A - Patricia had forgotten.
+      B - Patricia had changed.
+
+    7. (43%)
+      A - Some lake was passed by some cashiers.
+      B - Some lake was passed by some phenomena.
+
+Apart from these examples just being super bad, the principle supposedly being
+tested in the last question is that the agent in a passive-voice sentence has
+to be animate — a distinction of meaning — whereas a ton of the generated
+sentences make no sense at all (reports becoming upset and whatnot) and the
+human test-taker's job is to rule them out as ungrammatical. It's like a
+history question showing up on a logic test.
+
+I'm pretty sure that `animate_subject_passive` is not a real rule.
+
+The test seems intended to get at whether the model understands passive voice.
+Certain verbs require an animate subject, like "hate", "bring", "attack". Sofas
+mostly don't hate, bring things, or attack (yet — Mattie note: opportunity to
+disrupt). So you would typically vote for "Some majorettes attacked us." over
+"Some envelopes attacked us." But these verbs are rarer in the passive, so:
+does the model nonetheless realize that "We were attacked by some majorettes"
+is more likely than "...by some envelopes"?
+
+But they use verbs like "cure" that are questionable for this purpose:
+
+    11.
+      A - Kristen wasn't cured by the dress.
+      B - Kristen wasn't cured by the men.
+
+and some nouns like "phenomena" or "deer" that are questionably inanimate. And
+like I said, it's weird that in most cases the good sentences are grammatical
+but nonsensical, and here the bad sentence is grammatical but nonsensical.
+
+Most examples in COCA are of people being "cured by" nouns that could hardly be
+considered animate, like "science", "hypnosis", "surgery", "an unexpected
+encounter with fragrant hyacinths", or "the burying of the egg near the sea in
+the light of the full moon". Lamentable conditions are also occasionally
+cured by people, particularly popes. But still.
 
 
 

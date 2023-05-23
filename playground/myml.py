@@ -102,7 +102,7 @@ class LinearLayer(Layer):
 
         dz[r,c] is the partial derivative of loss with respect to z[r,c]; that
         is, the partial derivative of the *rest* of the pipeline with respect to
-        output r at training sample x[:,c].
+        output c at training sample x[r,:].
         """
 
         ni, no = self.shape # number of outputs, inputs

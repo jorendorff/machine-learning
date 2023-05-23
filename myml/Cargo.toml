@@ -9,3 +9,7 @@ edition = "2021"
 ndarray = "0.15"
 ndarray-rand = "0.14"
 rand = "0.8"
+batman = { git = "https://github.com/parasyte/batman.git" }
+
+[dev-dependencies]
+mnist = "0.5"

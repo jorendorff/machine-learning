@@ -1,5 +1,9 @@
 mod traits;
-pub use traits::{Layer, Loss};
+pub use traits::{ActivationFn, Layer, Loss};
 
 mod model;
 pub use model::Model;
+
+pub mod loss;
+
+pub mod layers;

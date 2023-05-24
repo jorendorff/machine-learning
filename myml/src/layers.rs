@@ -14,7 +14,7 @@ pub struct InputLayer<D> {
 
 impl<D: Dimension> InputLayer<D> {
     #[allow(dead_code)]
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         InputLayer {
             phantom: PhantomData,
         }
@@ -24,14 +24,25 @@ impl<D: Dimension> InputLayer<D> {
 impl<D: Dimension> Layer<D> for InputLayer<D> {
     type Output = D;
 
-    fn apply(&self, _params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, D>) -> Array<f32, D> {
-        x.into_owned()
+    fn output_shape(&self, input_shape: D) -> D {
+        input_shape
+    }
+
+    fn apply(
+        &self,
+        _params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, D>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut<'_, f32, D>,
+    ) {
+        y.assign(&x);
     }
 
     fn derivatives(
         &self,
         _params: ArrayView1<'_, f32>,
         _x: ArrayView<'_, f32, D>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, D>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {
@@ -68,18 +79,31 @@ where
 impl<D: Dimension> Layer<D> for FlattenLayer<D> {
     type Output = Ix2;
 
-    fn apply(&self, _params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, D>) -> Array<f32, Ix2> {
+    fn output_shape(&self, input_shape: D) -> Ix2 {
+        let n = input_shape[0];
+        Ix2(n, input_shape.size() / n)
+    }
+
+    fn apply(
+        &self,
+        _params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, D>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut2<'_, f32>,
+    ) {
         let size = self.input_shape.size();
         let n = x.shape()[0];
-        x.into_shape((n, size))
-            .expect("rows of x should match self.input_shape")
-            .into_owned()
+        y.assign(
+            &x.into_shape((n, size))
+                .expect("rows of x should match self.input_shape"),
+        );
     }
 
     fn derivatives(
         &self,
         _params: ArrayView1<'_, f32>,
         _x: ArrayView<'_, f32, D>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, Ix2>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {
@@ -113,41 +137,47 @@ impl LinearLayer {
 impl Layer<Ix2> for LinearLayer {
     type Output = Ix2;
 
+    fn output_shape(&self, input_shape: Ix2) -> Ix2 {
+        Ix2(input_shape[0], self.no)
+    }
+
     fn num_params(&self) -> usize {
         self.ni * self.no
     }
 
-    fn apply(&self, params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, Ix2>) -> Array<f32, Ix2> {
+    fn apply(
+        &self,
+        params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, Ix2>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut2<'_, f32>,
+    ) {
         let ni = self.ni;
         let no = self.no;
         assert_eq!(x.shape()[1], ni);
         let w = params
             .into_shape((ni, no))
             .expect("size of params should be self.num_params()");
-        x.dot(&w)
+        y.assign(&x.dot(&w))
     }
 
     fn derivatives(
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, Ix2>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, Self::Output>,
         mut dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, Ix2> {
         let ni = self.ni;
         let no = self.no;
         let n = x.shape()[0];
-
         assert_eq!(x.shape()[1], ni);
 
         let w = params
             .into_shape((ni, no))
             .expect("size of params should be self.num_params()");
         assert_eq!(dz.shape(), [n, no]);
-
-        //println!("\n\n");
-        //println!("LinearLayer: x={x:#?}");
-        //println!("            dz={dz:#?}");
 
         let dw = x.t().dot(&dz);
         assert_eq!(dw.shape(), [ni, no]);
@@ -183,22 +213,35 @@ where
 {
     type Output = D;
 
+    fn output_shape(&self, input_shape: D) -> D {
+        input_shape
+    }
+
     fn num_params(&self) -> usize {
         self.shape
             .size_checked()
             .expect("overflow in size calculation")
     }
 
-    fn apply(&self, params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, D>) -> Array<f32, D> {
-        &x + &params
-            .into_shape(self.shape.clone())
-            .expect("params size should match self.num_params()")
+    fn apply(
+        &self,
+        params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, D>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut<'_, f32, D>,
+    ) {
+        y.assign(
+            &(&x + &params
+                .into_shape(self.shape.clone())
+                .expect("params size should match self.num_params()")),
+        );
     }
 
     fn derivatives(
         &self,
         _params: ArrayView1<'_, f32>,
         _x: ArrayView<'_, f32, D>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, D>,
         mut dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {
@@ -231,19 +274,32 @@ where
 {
     type Output = D;
 
-    fn apply(&self, _params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, D>) -> Array<f32, D> {
+    fn output_shape(&self, input_shape: D) -> D {
+        input_shape
+    }
+
+    fn apply(
+        &self,
+        _params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, D>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut<'_, f32, D>,
+    ) {
         let f = self.f;
-        x.mapv(move |v| f.f(v))
+        y.assign(&x.mapv(move |v| f.f(v)));
     }
 
     fn derivatives(
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, D>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {
-        Zip::from(&x).and(&dz).map_collect(|x, dz| x * dz)
+        Zip::from(&x)
+            .and(&dz)
+            .map_collect(|&x, &dz| self.f.df(x) * dz)
     }
 }
 
@@ -323,36 +379,68 @@ where
 {
     type Output = L2::Output;
 
+    fn output_shape(&self, input_shape: D) -> Self::Output {
+        let hidden_shape = self.first.output_shape(input_shape);
+        self.second.output_shape(hidden_shape)
+    }
+
     fn num_params(&self) -> usize {
         self.num_params
+    }
+
+    fn num_hidden_activations(&self, input_shape: D) -> usize {
+        let hidden_shape = self.first.output_shape(input_shape.clone());
+        self.first.num_hidden_activations(input_shape)
+            + hidden_shape.size()
+            + self.second.num_hidden_activations(hidden_shape)
     }
 
     fn apply(
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-    ) -> Array<f32, Self::Output> {
+        tmp: ArrayViewMut1<'_, f32>,
+        y: ArrayViewMut<'_, f32, Self::Output>,
+    ) {
+        let input_shape = x.raw_dim();
+        let hidden_shape = self.first.output_shape(input_shape.clone());
+        let (tmp1, tmp) = tmp.split_at(Axis(0), self.first.num_hidden_activations(input_shape));
+        let (mid, tmp2) = tmp.split_at(Axis(0), hidden_shape.size());
+        let mut m = mid
+            .into_shape(hidden_shape)
+            .expect("tmp should be contiguous and sized for first layer output");
+
         let (p1, p2) = params.split_at(Axis(0), self.first_num_params);
-        let m = self.first.apply(p1, x.view());
-        // TODO: save m for later
-        self.second.apply(p2, m.view())
+        self.first.apply(p1, x.view(), tmp1, m.view_mut());
+        self.second.apply(p2, m.view(), tmp2, y);
     }
 
     fn derivatives(
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
+        tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, Self::Output>,
         dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {
         let (p1, p2) = params.split_at(Axis(0), self.first_num_params);
         let (dp1, dp2) = dp.split_at(Axis(0), self.first_num_params);
 
-        // re-compute m :-\ quadratic, has to be fixed
-        let m = self.first.apply(p1, x.view());
+        // Find the activations of the first layer. They are stored in the
+        // middle of `tmp`. This is equivalent to recomputing them by calling
+        // self.first.apply(), but that would be slow.
+        let input_shape = x.raw_dim();
+        let hidden_shape = self.first.output_shape(input_shape.clone());
+        let m1 = self.first.num_hidden_activations(input_shape);
+        let m2 = m1 + hidden_shape.size();
+        let m = tmp
+            .slice(s![m1..m2])
+            .into_shape(hidden_shape)
+            .expect("tmp should be contiguous and sized for first layer output");
 
-        let dm = self.second.derivatives(p2, m.view(), dz, dp2);
-        self.first.derivatives(p1, x, dm.view(), dp1)
+        let dm = self.second.derivatives(p2, m, tmp.slice(s![m2..]), dz, dp2);
+        self.first
+            .derivatives(p1, x, tmp.slice(s![..m1]), dm.view(), dp1)
     }
 }
 
@@ -362,17 +450,27 @@ pub struct SoftmaxLayer;
 impl Layer<Ix2> for SoftmaxLayer {
     type Output = Ix2;
 
-    fn apply(&self, _params: ArrayView1<'_, f32>, x: ArrayView<'_, f32, Ix2>) -> Array2<f32> {
+    fn output_shape(&self, input_shape: Ix2) -> Ix2 {
+        input_shape
+    }
 
+    fn apply(
+        &self,
+        _params: ArrayView1<'_, f32>,
+        x: ArrayView<'_, f32, Ix2>,
+        _tmp: ArrayViewMut1<'_, f32>,
+        mut y: ArrayViewMut2<'_, f32>,
+    ) {
         let ex = x.mapv(|v| v.exp().clamp(1e-30, 1e30));
         let sum_ex = ex.sum_axis(Axis(1));
-        &ex / &sum_ex.slice(s![.., NewAxis])
+        y.assign(&(&ex / &sum_ex.slice(s![.., NewAxis])));
     }
 
     fn derivatives(
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView2<'_, f32>,
+        _tmp: ArrayView1<'_, f32>,
         dz: ArrayView2<'_, f32>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array2<f32> {

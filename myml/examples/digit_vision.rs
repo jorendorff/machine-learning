@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use mnist::*;
 use ndarray::prelude::*;
-use ndarray::{Zip, IntoDimension};
+use ndarray::{IntoDimension, Zip};
 
 use myml::layers::FlattenLayer;
 use myml::loss::CategoricalCrossEntropyLoss;
@@ -24,31 +24,29 @@ fn training_epochs<'a>(
     train_y: ArrayView1<'a, usize>,
     num_epochs: usize,
     batch_size: usize,
-) -> impl Iterator<Item=impl IntoIterator<Item=(ArrayView4<'a, f32>, ArrayView1<'a, usize>)> + 'a> +'a {
+) -> impl Iterator<Item = impl IntoIterator<Item = (ArrayView4<'a, f32>, ArrayView1<'a, usize>)> + 'a> + 'a
+{
     // TODO: shuffle images
 
     let n = train_x.len_of(Axis(0));
-    (0..num_epochs)
-        .map(move |_epoch| {
-            let mut train_x = train_x;
-            let mut train_y = train_y;
-            (0..n)
-                .step_by(batch_size)
-                .map(move |_begin| -> (ArrayView4<'a, f32>, ArrayView1<'a, usize>) {
-                    let remaining = train_x.len_of(Axis(0));
-                    let cut = batch_size.min(remaining);
-                    let (x, xs) = train_x.split_at(Axis(0), cut);
-                    let (y, ys) = train_y.split_at(Axis(0), cut);
-                    train_x = xs;
-                    train_y = ys;
-                    (x, y)
-                })
-        })
+    (0..num_epochs).map(move |_epoch| {
+        let mut train_x = train_x;
+        let mut train_y = train_y;
+        (0..n).step_by(batch_size).map(
+            move |_begin| -> (ArrayView4<'a, f32>, ArrayView1<'a, usize>) {
+                let remaining = train_x.len_of(Axis(0));
+                let cut = batch_size.min(remaining);
+                let (x, xs) = train_x.split_at(Axis(0), cut);
+                let (y, ys) = train_y.split_at(Axis(0), cut);
+                train_x = xs;
+                train_y = ys;
+                (x, y)
+            },
+        )
+    })
 }
 
 fn main() {
-    unsafe { batman::signal(); }
-
     let Mnist {
         trn_img,
         trn_lbl,
@@ -78,23 +76,26 @@ fn main() {
     model.set_learning_rate(0.15);
 
     let num_epochs = 5;
-    let batch_size = 1;
+    let batch_size = 50;
     let t0 = Instant::now();
-    model.train_epochs(training_epochs(x_train.view(), y_train.view(), num_epochs, batch_size));
+    model.train_epochs(training_epochs(
+        x_train.view(),
+        y_train.view(),
+        num_epochs,
+        batch_size,
+    ));
     println!("trained {num_epochs} epochs in {:?}", t0.elapsed());
 
     let n_test = x_test.len_of(Axis(0));
     let yh = model.apply(x_test.view());
 
     let mut num_bad = 0;
-    Zip::from(&y_test)
-        .and(yh.rows())
-        .for_each(|&y, yh| {
-            let p = yh[y];
-            if yh.iter().any(|&x| x > p) {
-                num_bad += 1;
-            }
-        });
+    Zip::from(&y_test).and(yh.rows()).for_each(|&y, yh| {
+        let p = yh[y];
+        if yh.iter().any(|&x| x > p) {
+            num_bad += 1;
+        }
+    });
 
     let accuracy = 100.0 * (n_test - num_bad) as f32 / n_test as f32;
     println!("{num_bad}/{n_test} test images misclassified ({accuracy:.1}% accuracy)");

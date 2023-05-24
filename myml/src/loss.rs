@@ -63,13 +63,11 @@ impl<'a> Loss<Ix2, ArrayView1<'a, usize>> for CategoricalCrossEntropyLoss {
             0.0
         } else {
             let mut total = 0.0;
-            Zip::from(y)
-                .and(yh.rows())
-                .for_each(|&y, yh| {
-                    let p = yh[y].max(f32::MIN_POSITIVE);
-                    assert!(0.0 < p && p <= 1.0);
-                    total += -p.ln();
-                });
+            Zip::from(y).and(yh.rows()).for_each(|&y, yh| {
+                let p = yh[y].max(f32::MIN_POSITIVE);
+                assert!(0.0 < p && p <= 1.0);
+                total += -p.ln();
+            });
             total / n as f32
         }
     }
@@ -80,10 +78,6 @@ impl<'a> Loss<Ix2, ArrayView1<'a, usize>> for CategoricalCrossEntropyLoss {
         assert_eq!(y.shape(), &[n]);
         let mut dyh = Array2::<f32>::zeros((n, c));
 
-        println!("\n");
-        println!("Loss::deriv: y={y:#?}");
-        println!("            yh={yh:#?}");
-        
         Zip::from(dyh.rows_mut())
             .and(y)
             .and(yh.rows())
@@ -95,14 +89,12 @@ impl<'a> Loss<Ix2, ArrayView1<'a, usize>> for CategoricalCrossEntropyLoss {
         let n = yh.shape()[0]; // number of examples
         assert_eq!(y.shape(), &[n]);
         let mut num_good = 0;
-        Zip::from(y)
-            .and(yh.rows())
-            .for_each(|&y, yh| {
-                let p = yh[y];
-                if yh.iter().all(|&x| x <= p) {
-                    num_good += 1;
-                }
-            });
+        Zip::from(y).and(yh.rows()).for_each(|&y, yh| {
+            let p = yh[y];
+            if yh.iter().all(|&x| x <= p) {
+                num_good += 1;
+            }
+        });
         num_good as f32 / n as f32
     }
 }

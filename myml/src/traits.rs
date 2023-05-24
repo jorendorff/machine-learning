@@ -13,6 +13,11 @@ where
     /// Axis 0 of this is always the mini-batch axis.
     type Output: Dimension;
 
+    /// For input of the given shape, compute the output shape.
+    ///
+    /// Axis 0 of both `input_shape` and `output_shape` is the mini-batch axis.
+    fn output_shape(&self, input_shape: D) -> Self::Output;
+
     /// Number of parameters required for this layer.
     ///
     /// The caller provides parameters to the other methods as a single flat
@@ -22,7 +27,16 @@ where
         0
     }
 
-    /// Return the output of this layer, given the `params` and the input `x`.
+    /// Number of hidden activations that should be stored for this layer.
+    ///
+    /// We (wastefully) save the output of every layer. This method is used to
+    /// set aside memory for the whole thing at the outset.
+    fn num_hidden_activations(&self, _input_shape: D) -> usize {
+        0
+    }
+
+    /// Compute the output of this layer, given the `params` and the input `x`.
+    /// Store the output in `y` and store the output of all hidden layers in `tmp`.
     ///
     /// Axis 0 of `x` is always the mini-batch axis; that is, each `x[i]` is a
     /// single training example or prediction task.
@@ -30,7 +44,9 @@ where
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-    ) -> Array<f32, Self::Output>;
+        tmp: ArrayViewMut1<'_, f32>,
+        y: ArrayViewMut<f32, Self::Output>,
+    );
 
     /// Given x and ∂L/∂z at x, compute partial derivatives ∂L/∂x and ∂L/∂p.
     ///
@@ -46,6 +62,7 @@ where
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
+        tmp: ArrayView1<'_, f32>,
         dz: ArrayView<'_, f32, Self::Output>,
         dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D>;

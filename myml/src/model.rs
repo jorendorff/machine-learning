@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::marker::PhantomData;
 
 use ndarray::prelude::*;
@@ -40,20 +41,39 @@ where
 
     /// Run the model on an array of examples.
     pub fn apply(&self, x: ArrayView<'_, f32, DI>) -> Array<f32, N::Output> {
-        self.net.apply(self.params.view(), x)
+        let input_shape = x.raw_dim();
+        let output_shape = self.net.output_shape(input_shape.clone());
+        let mut tmp = Array1::<f32>::zeros(self.net.num_hidden_activations(input_shape));
+        let mut out = Array::<f32, N::Output>::zeros(output_shape);
+        self.net
+            .apply(self.params.view(), x, tmp.view_mut(), out.view_mut());
+        out
     }
 
     /// Train the model on a batch of examples.
     pub fn train(&mut self, x_train: ArrayView<'_, f32, DI>, y_train: Y, rate: f32) -> (f32, f32) {
-        let yh = self.apply(x_train.clone());
+        let input_shape = x_train.raw_dim();
+        let output_shape = self.net.output_shape(input_shape.clone());
+        let mut tmp = Array1::<f32>::zeros(self.net.num_hidden_activations(input_shape));
+        let mut yh = Array::<f32, N::Output>::zeros(output_shape);
+        self.net.apply(
+            self.params.view(),
+            x_train.view(),
+            tmp.view_mut(),
+            yh.view_mut(),
+        );
         let loss = self.loss.loss(y_train, yh.view());
         let accuracy = self.loss.accuracy(y_train, yh.view());
 
         let dyh = self.loss.deriv(y_train, yh.view());
-        let mut dp = Array::<f32, Ix1>::zeros((self.net.num_params(),).f());
-        let _ = self
-            .net
-            .derivatives(self.params.view(), x_train, dyh.view(), dp.view_mut());
+        let mut dp = Array1::<f32>::zeros(self.net.num_params());
+        let _ = self.net.derivatives(
+            self.params.view(),
+            x_train,
+            tmp.view(),
+            dyh.view(),
+            dp.view_mut(),
+        );
         if dp.iter().all(|x| *x == 0.0) {
             println!("gradient is 0");
             return (0.0, 1.0);
@@ -76,6 +96,7 @@ where
 
         for (i, epoch) in epochs.into_iter().enumerate() {
             print!("epoch {i} - \x1b[s");
+            io::stdout().flush().unwrap();
 
             let mut n_total = 0;
             let mut loss_total = 0.0;
@@ -102,6 +123,7 @@ where
                         " ".repeat(78),
                         Self::progress_bar(progress, 40)
                     );
+                    io::stdout().flush().unwrap();
                 }
             }
             if i == 0 {

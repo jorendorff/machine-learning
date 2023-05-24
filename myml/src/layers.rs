@@ -102,7 +102,7 @@ pub struct LinearLayer {
 }
 
 impl LinearLayer {
-    pub(crate) fn new(num_inputs: usize, num_outputs: usize) -> Self {
+    pub fn new(num_inputs: usize, num_outputs: usize) -> Self {
         LinearLayer {
             ni: num_inputs,
             no: num_outputs,

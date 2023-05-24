@@ -21,14 +21,14 @@ where
     let mut params = Array::random(n, Uniform::new(0.0, 1.0));
     println!("testing layer {layer:#?} with parameters {params:#?}");
     let mut x = Array::random(input_shape.clone(), Uniform::new(0.0, 1.0));
-    println!("input x: {x:#?}");
+    //println!("input x: {x:#?}");
     let mut tmp = Array1::zeros(layer.num_hidden_activations(input_shape.clone()));
     let mut z = Array::zeros(output_shape.clone());
     layer.apply(params.view(), x.view(), tmp.view_mut(), z.view_mut());
-    println!("output z: {z:#?}");
+    //println!("output z: {z:#?}");
 
     let dz = Array::random(z.raw_dim(), Uniform::new(-0.1, 0.1));
-    println!("dz: {dz:#?}");
+    //println!("dz: {dz:#?}");
     let mut dp = Array::zeros(n);
     let dx = layer.derivatives(
         params.view(),
@@ -37,7 +37,7 @@ where
         dz.view(),
         dp.view_mut(),
     );
-    println!("dx: {dx:#?}");
+    //println!("dx: {dx:#?}");
 
     let h = 0.0003;
 

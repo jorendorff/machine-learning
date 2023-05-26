@@ -103,6 +103,11 @@ fn test_layer_consistency() {
         (2, 3),
     );
 
+    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (1, 1));
+    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (2, 1));
+    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (4, 1));
+    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (5, 1));
+
     //test_layer(layers::LinearLayer::new(30, 10).relu(), (2, 30));
     //test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4), (2, 30));
     //test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4).softmax(), (2, 30));

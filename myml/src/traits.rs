@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use ndarray::prelude::*;
 use ndarray::RemoveAxis;
 
-use crate::layers::{ActivationLayer, BiasLayer, LinearLayer, Relu, Sequence, SoftmaxLayer};
+use crate::layers::{ActivationLayer, BiasLayer, LinearLayer, Relu, Sequence, SoftmaxLayer, ParallelLayer};
 
 pub trait Layer<D>: Debug
 where
@@ -112,6 +112,13 @@ where
         Self: Sized + Layer<D, Output = Ix2>,
     {
         Sequence::new(self, SoftmaxLayer)
+    }
+
+    fn parallel(self, batch_size: usize) -> ParallelLayer<Self>
+    where
+        Self: Sized
+    {
+        ParallelLayer::new(self, batch_size)
     }
 }
 

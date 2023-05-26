@@ -70,13 +70,14 @@ fn main() {
             .linear(500, 100)
             .relu()
             .linear(100, 10)
-            .softmax(),
+            .softmax()
+            .parallel(8),
         CategoricalCrossEntropyLoss,
     );
     model.set_learning_rate(0.15);
 
     let num_epochs = 5;
-    let batch_size = 50;
+    let batch_size = 64;
     let t0 = Instant::now();
     model.train_epochs(training_epochs(
         x_train.view(),

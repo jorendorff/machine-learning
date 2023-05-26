@@ -6,6 +6,8 @@ mod input;
 pub use input::InputLayer;
 mod linear;
 pub use linear::{BiasLayer, LinearLayer};
+mod parallel;
+pub use parallel::ParallelLayer;
 mod sequence;
 pub use sequence::Sequence;
 mod softmax;

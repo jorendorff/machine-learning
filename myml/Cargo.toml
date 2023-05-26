@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ndarray = "0.15"
+ndarray = { version = "0.15", features = ["rayon"] }
 ndarray-rand = "0.14"
 rand = "0.8"
-batman = { git = "https://github.com/parasyte/batman.git" }
+rayon = "1.7"
 
 [dev-dependencies]
 mnist = "0.5"

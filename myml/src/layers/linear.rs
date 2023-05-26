@@ -37,7 +37,7 @@ impl Layer<Ix2> for LinearLayer {
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, Ix2>,
-        _tmp: ArrayViewMut1<'_, f32>,
+        _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut2<'_, f32>,
     ) {
         let ni = self.ni;
@@ -53,7 +53,7 @@ impl Layer<Ix2> for LinearLayer {
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, Ix2>,
-        _tmp: ArrayView1<'_, f32>,
+        _tmp: ArrayView2<'_, f32>,
         dz: ArrayView<'_, f32, Self::Output>,
         mut dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, Ix2> {
@@ -115,7 +115,7 @@ where
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        _tmp: ArrayViewMut1<'_, f32>,
+        _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut<'_, f32, D>,
     ) {
         y.assign(
@@ -129,7 +129,7 @@ where
         &self,
         _params: ArrayView1<'_, f32>,
         _x: ArrayView<'_, f32, D>,
-        _tmp: ArrayView1<'_, f32>,
+        _tmp: ArrayView2<'_, f32>,
         dz: ArrayView<'_, f32, D>,
         mut dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {

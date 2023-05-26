@@ -1,6 +1,5 @@
 use ndarray::prelude::*;
-
-use ndarray::Zip;
+use ndarray::{RemoveAxis, Zip};
 
 use crate::{ActivationFn, Layer};
 
@@ -21,7 +20,7 @@ where
 
 impl<D, F> Layer<D> for ActivationLayer<F>
 where
-    D: Dimension,
+    D: Dimension + RemoveAxis,
     F: ActivationFn,
 {
     type Output = D;
@@ -34,7 +33,7 @@ where
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        _tmp: ArrayViewMut1<'_, f32>,
+        _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut<'_, f32, D>,
     ) {
         let f = self.f;
@@ -45,7 +44,7 @@ where
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        _tmp: ArrayView1<'_, f32>,
+        _tmp: ArrayView2<'_, f32>,
         dz: ArrayView<'_, f32, D>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {

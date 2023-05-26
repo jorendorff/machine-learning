@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use ndarray::prelude::*;
+use ndarray::RemoveAxis;
 
 use crate::layers::{ActivationLayer, BiasLayer, LinearLayer, Relu, Sequence, SoftmaxLayer};
 
@@ -11,7 +12,7 @@ where
     /// Type of the output shape, typically one of `Ix1`, `Ix2`, etc.
     ///
     /// Axis 0 of this is always the mini-batch axis.
-    type Output: Dimension;
+    type Output: Dimension + RemoveAxis;
 
     /// For input of the given shape, compute the output shape.
     ///
@@ -27,12 +28,13 @@ where
         0
     }
 
-    /// Number of hidden activations that should be stored for this layer.
+    /// Amonut of temporary space this layer needs for hidden activations.
     ///
-    /// We (wastefully) save the output of every layer. This method is used to
-    /// set aside memory for the whole thing at the outset.
-    fn num_hidden_activations(&self, _input_shape: D) -> usize {
-        0
+    /// During training, to avoid redoing work during backpropagation, we have to save
+    /// the output of some layers. Currently we (wastefully) save it *all*. This method
+    /// is used to set aside a big buffer for that data at the start of each batch.
+    fn hidden_activations_shape(&self, input_shape: D) -> Ix2 {
+        Ix2(input_shape[0], 0)
     }
 
     /// Compute the output of this layer, given the `params` and the input `x`.
@@ -44,7 +46,7 @@ where
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        tmp: ArrayViewMut1<'_, f32>,
+        tmp: ArrayViewMut2<'_, f32>,
         y: ArrayViewMut<f32, Self::Output>,
     );
 
@@ -62,7 +64,7 @@ where
         &self,
         params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        tmp: ArrayView1<'_, f32>,
+        tmp: ArrayView2<'_, f32>,
         dz: ArrayView<'_, f32, Self::Output>,
         dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D>;

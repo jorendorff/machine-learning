@@ -43,7 +43,7 @@ where
     pub fn apply(&self, x: ArrayView<'_, f32, DI>) -> Array<f32, N::Output> {
         let input_shape = x.raw_dim();
         let output_shape = self.net.output_shape(input_shape.clone());
-        let mut tmp = Array1::<f32>::zeros(self.net.num_hidden_activations(input_shape));
+        let mut tmp = Array2::<f32>::zeros(self.net.hidden_activations_shape(input_shape));
         let mut out = Array::<f32, N::Output>::zeros(output_shape);
         self.net
             .apply(self.params.view(), x, tmp.view_mut(), out.view_mut());
@@ -54,7 +54,7 @@ where
     pub fn train(&mut self, x_train: ArrayView<'_, f32, DI>, y_train: Y, rate: f32) -> (f32, f32) {
         let input_shape = x_train.raw_dim();
         let output_shape = self.net.output_shape(input_shape.clone());
-        let mut tmp = Array1::<f32>::zeros(self.net.num_hidden_activations(input_shape));
+        let mut tmp = Array2::<f32>::zeros(self.net.hidden_activations_shape(input_shape));
         let mut yh = Array::<f32, N::Output>::zeros(output_shape);
         self.net.apply(
             self.params.view(),

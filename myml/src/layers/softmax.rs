@@ -20,7 +20,7 @@ impl Layer<Ix2> for SoftmaxLayer {
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, Ix2>,
-        _tmp: ArrayViewMut1<'_, f32>,
+        _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut2<'_, f32>,
     ) {
         let ex = x.mapv(|v| v.exp().clamp(1e-30, 1e30));
@@ -32,7 +32,7 @@ impl Layer<Ix2> for SoftmaxLayer {
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView2<'_, f32>,
-        _tmp: ArrayView1<'_, f32>,
+        _tmp: ArrayView2<'_, f32>,
         dz: ArrayView2<'_, f32>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array2<f32> {

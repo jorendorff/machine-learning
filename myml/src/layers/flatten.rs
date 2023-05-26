@@ -1,6 +1,14 @@
 use ndarray::prelude::*;
+use ndarray::RemoveAxis;
 
 use crate::Layer;
+
+/// Flatten a shape from n-dimensional to 2-dimensional.
+///
+/// Axis 0, the mini-batch axis, is retained.
+pub(crate) fn flatten<D: RemoveAxis>(shape: D) -> Ix2 {
+    Ix2(shape[0], shape.remove_axis(Axis(0)).size())
+}
 
 /// Reshape inputs to matrix form.
 ///
@@ -20,7 +28,7 @@ pub struct FlattenLayer<D> {
 
 impl<D> FlattenLayer<D>
 where
-    D: Dimension,
+    D: Dimension + RemoveAxis,
 {
     pub fn new(mut input_shape: D) -> Self {
         input_shape.as_array_view_mut()[0] = 1;
@@ -28,19 +36,18 @@ where
     }
 }
 
-impl<D: Dimension> Layer<D> for FlattenLayer<D> {
+impl<D: Dimension + RemoveAxis> Layer<D> for FlattenLayer<D> {
     type Output = Ix2;
 
     fn output_shape(&self, input_shape: D) -> Ix2 {
-        let n = input_shape[0];
-        Ix2(n, input_shape.size() / n)
+        flatten(input_shape)
     }
 
     fn apply(
         &self,
         _params: ArrayView1<'_, f32>,
         x: ArrayView<'_, f32, D>,
-        _tmp: ArrayViewMut1<'_, f32>,
+        _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut2<'_, f32>,
     ) {
         let size = self.input_shape.size();
@@ -55,7 +62,7 @@ impl<D: Dimension> Layer<D> for FlattenLayer<D> {
         &self,
         _params: ArrayView1<'_, f32>,
         _x: ArrayView<'_, f32, D>,
-        _tmp: ArrayView1<'_, f32>,
+        _tmp: ArrayView2<'_, f32>,
         dz: ArrayView<'_, f32, Ix2>,
         _dp: ArrayViewMut1<'_, f32>,
     ) -> Array<f32, D> {

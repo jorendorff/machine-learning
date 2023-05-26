@@ -1,3 +1,5 @@
+mod array_util;
+
 mod traits;
 pub use traits::{ActivationFn, Layer, Loss};
 

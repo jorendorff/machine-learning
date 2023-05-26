@@ -22,7 +22,7 @@ where
     println!("testing layer {layer:#?} with parameters {params:#?}");
     let mut x = Array::random(input_shape.clone(), Uniform::new(0.0, 1.0));
     //println!("input x: {x:#?}");
-    let mut tmp = Array1::zeros(layer.num_hidden_activations(input_shape.clone()));
+    let mut tmp = Array2::zeros(layer.hidden_activations_shape(input_shape.clone()));
     let mut z = Array::zeros(output_shape.clone());
     layer.apply(params.view(), x.view(), tmp.view_mut(), z.view_mut());
     //println!("output z: {z:#?}");

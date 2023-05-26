@@ -74,10 +74,10 @@ fn main() {
             .parallel(8),
         CategoricalCrossEntropyLoss,
     );
-    model.set_learning_rate(0.15);
+    model.set_learning_rate(0.3);
 
     let num_epochs = 5;
-    let batch_size = 64;
+    let batch_size = 256;
     let t0 = Instant::now();
     model.train_epochs(training_epochs(
         x_train.view(),

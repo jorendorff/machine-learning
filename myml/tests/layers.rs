@@ -7,7 +7,7 @@ use ndarray_rand::RandomExt;
 
 use myml::*;
 
-fn test_layer<L, D>(layer: L, input_shape: D)
+fn test_layer<L, D>(layer: L, input_shape: D, error_limit: f32)
 where
     D: IntoDimension,
     L: Layer<D::Dim>,
@@ -15,12 +15,10 @@ where
     let input_shape = input_shape.into_dimension();
     let output_shape = layer.output_shape(input_shape.clone());
 
-    let error_limit = 0.01;
-
     let n = layer.num_params();
     let mut params = Array::random(n, Uniform::new(0.0, 1.0));
-    println!("testing layer {layer:#?} with parameters {params:#?}");
     let mut x = Array::random(input_shape.clone(), Uniform::new(0.0, 1.0));
+    println!("testing layer {layer:#?} with parameters {params:#?}, input {x:#?}");
     //println!("input x: {x:#?}");
     let mut tmp = Array2::zeros(layer.hidden_activations_shape(input_shape.clone()));
     let mut z = Array::zeros(output_shape.clone());
@@ -90,35 +88,74 @@ where
 
 #[test]
 fn test_layer_consistency() {
-    test_layer(layers::LinearLayer::new(1, 1), (1, 1));
-    test_layer(layers::InputLayer::new().linear(1, 1), (1, 1));
-    test_layer(layers::LinearLayer::new(5, 3), (1, 5));
-    test_layer(layers::InputLayer::new().linear(5, 3), (1, 5));
+    test_layer(layers::LinearLayer::new(1, 1), (1, 1), 0.01);
+    test_layer(layers::InputLayer::new().linear(1, 1), (1, 1), 0.01);
+    test_layer(layers::LinearLayer::new(5, 3), (1, 5), 0.01);
+    test_layer(layers::InputLayer::new().linear(5, 3), (1, 5), 0.01);
 
-    test_layer(layers::LinearLayer::new(1, 1).relu(), (2, 1));
-    test_layer(layers::LinearLayer::new(10, 10).relu(), (2, 10));
-    test_layer(layers::LinearLayer::new(4, 2).softmax(), (3, 4));
+    test_layer(layers::LinearLayer::new(1, 1).relu(), (2, 1), 0.01);
+    test_layer(layers::LinearLayer::new(10, 10).relu(), (2, 10), 0.01);
+    test_layer(layers::LinearLayer::new(4, 2).softmax(), (3, 4), 0.01);
     test_layer(
         layers::LinearLayer::new(3, 3).relu().linear(3, 4).softmax(),
         (2, 3),
+        0.01,
     );
 
-    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (1, 1));
-    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (2, 1));
-    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (4, 1));
-    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (5, 1));
+    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (1, 1), 0.01);
+    test_layer(layers::LinearLayer::new(1, 1).parallel(1), (2, 1), 0.01);
+    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (4, 1), 0.01);
+    test_layer(layers::LinearLayer::new(1, 1).parallel(4), (5, 1), 0.01);
 
-    //test_layer(layers::LinearLayer::new(30, 10).relu(), (2, 30));
-    //test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4), (2, 30));
-    //test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4).softmax(), (2, 30));
+    // test_layer(layers::LinearLayer::new(3, 2).relu().linear(2, 1).softmax(), (1, 3));
+    // test_layer(layers::LinearLayer::new(30, 10).relu(), (2, 30));
+    // test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4), (2, 30));
+    // test_layer(layers::LinearLayer::new(30, 10).relu().linear(10, 4).softmax(), (2, 30));
 
-    //for _ in 0..10000 {
-    //    test_layer(layers::LinearLayer::new(3, 2).relu().linear(2, 1).softmax(), (1, 3));
-    //}
+    test_layer(
+        layers::Conv2dLayer::new(Ix4(2, 3, 3, 1)),
+        (1, 4, 6, 1),
+        0.04,
+    );
+    test_layer(
+        layers::Conv2dLayer::new(Ix4(2, 3, 3, 3)),
+        (2, 4, 6, 3),
+        0.04,
+    );
+    // can't test MaxPool2dLayer in this way because `h` is too big
+}
 
-    // test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 1)), (1, 4, 6, 1))
-    // test_layer(rng, myml.Conv2DValidLayer((2, 3, 3, 3)), (2, 4, 6, 3))
-    // test_layer(rng, myml.MaxPooling2DLayer(2), (1, 6, 6, 3))
-    // test_layer(rng, myml.MaxPooling2DLayer(2), (1, 3, 3, 3))
-    // test_layer(rng, myml.MaxPooling2DLayer(3), (1, 4, 5, 3))
+#[test]
+fn test_pool() {
+    let layer = layers::MaxPool2dLayer::new(2);
+    let x: Array3<f32> = array![
+        [[0.528783300, 0.48312938], [0.21382916, 0.98248150]],
+        [[0.081051946, 0.60761390], [0.17663562, 0.98261246]]
+    ];
+    let x: Array4<f32> = x.into_shape((1, 2, 2, 2)).unwrap();
+
+    let mut y: Array4<f32> = Array::zeros(layer.output_shape(x.raw_dim()));
+    layer.apply(
+        ArrayView::from_shape(0, &[]).unwrap(),
+        x.view(),
+        ArrayViewMut::from_shape((1, 0), &mut []).unwrap(),
+        y.view_mut(),
+    );
+    assert_eq!(y.raw_dim().into_pattern(), (1, 1, 1, 2));
+    assert_eq!(y.slice(s![0, 0, 0, ..]), array![0.5287833, 0.98261246]);
+
+    let dy: Array4<f32> = 0.7f32 * Array::ones(layer.output_shape(x.raw_dim()));
+
+    let dx = layer.derivatives(
+        ArrayView::from_shape(0, &[]).unwrap(),
+        x.view(),
+        ArrayView2::from_shape((1, 0), &[]).unwrap(),
+        dy.view(),
+        ArrayViewMut1::from_shape(0, &mut []).unwrap(),
+    );
+
+    assert_eq!(
+        dx.slice(s![0, .., .., ..]),
+        array![[[0.7, 0.0], [0.0, 0.0]], [[0.0, 0.0], [0.0, 0.7]],]
+    );
 }

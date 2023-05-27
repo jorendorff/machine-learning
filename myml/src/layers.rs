@@ -1,11 +1,15 @@
 mod activation;
 pub use activation::{ActivationLayer, Relu, Sigmoid};
+mod convolutions;
+pub use convolutions::Conv2dLayer;
 mod flatten;
 pub use flatten::FlattenLayer;
 mod input;
 pub use input::InputLayer;
 mod linear;
 pub use linear::{BiasLayer, LinearLayer};
+mod max_pool;
+pub use max_pool::MaxPool2dLayer;
 mod parallel;
 pub use parallel::ParallelLayer;
 mod sequence;

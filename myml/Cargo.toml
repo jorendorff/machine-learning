@@ -13,3 +13,6 @@ rayon = "1.7"
 
 [dev-dependencies]
 mnist = "0.5"
+
+[profile.release]
+debug = true

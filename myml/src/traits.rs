@@ -1,9 +1,12 @@
 use std::fmt::Debug;
 
 use ndarray::prelude::*;
-use ndarray::RemoveAxis;
+use ndarray::{IntoDimension, RemoveAxis};
 
-use crate::layers::{ActivationLayer, BiasLayer, LinearLayer, Relu, Sequence, SoftmaxLayer, ParallelLayer};
+use crate::layers::{
+    ActivationLayer, BiasLayer, Conv2dLayer, FlattenLayer, LinearLayer, MaxPool2dLayer,
+    ParallelLayer, Relu, Sequence, SoftmaxLayer,
+};
 
 pub trait Layer<D>: Debug
 where
@@ -116,9 +119,42 @@ where
 
     fn parallel(self, batch_size: usize) -> ParallelLayer<Self>
     where
-        Self: Sized
+        Self: Sized,
     {
         ParallelLayer::new(self, batch_size)
+    }
+
+    fn flatten(
+        self,
+        input_shape: impl IntoDimension<Dim = Self::Output>,
+    ) -> Sequence<Self, FlattenLayer<Self::Output>>
+    where
+        Self: Sized,
+    {
+        Sequence::new(self, FlattenLayer::new(input_shape.into_dimension()))
+    }
+
+    fn conv_2d(
+        self,
+        num_outputs: usize,
+        kernel_height: usize,
+        kernel_width: usize,
+        num_inputs: usize,
+    ) -> Sequence<Self, Conv2dLayer>
+    where
+        Self: Sized + Layer<D, Output = Ix4>,
+    {
+        Sequence::new(
+            self,
+            Conv2dLayer::new(Ix4(num_outputs, kernel_height, kernel_width, num_inputs)),
+        )
+    }
+
+    fn max_pool_2d(self, size: usize) -> Sequence<Self, MaxPool2dLayer>
+    where
+        Self: Sized + Layer<D, Output = Ix4>,
+    {
+        Sequence::new(self, MaxPool2dLayer::new(size))
     }
 }
 

@@ -2,9 +2,9 @@ use std::time::Instant;
 
 use mnist::*;
 use ndarray::prelude::*;
-use ndarray::{IntoDimension, Zip};
+use ndarray::Zip;
 
-use myml::layers::FlattenLayer;
+use myml::layers::InputLayer;
 use myml::loss::CategoricalCrossEntropyLoss;
 use myml::{Layer, Model};
 
@@ -63,13 +63,30 @@ fn main() {
     let (x_train, y_train) = preprocess(trn_img, trn_lbl);
     let (x_test, y_test) = preprocess(tst_img, tst_lbl);
 
+    // let mut model = Model::new(
+    //     FlattenLayer::new((1, 28, 28, 1).into_dimension())
+    //         .linear(28 * 28, 500)
+    //         .relu()
+    //         .linear(500, 100)
+    //         .relu()
+    //         .linear(100, 10)
+    //         .softmax()
+    //         .parallel(8),
+    //     CategoricalCrossEntropyLoss,
+    // );
+    // model.set_learning_rate(0.30); // with batch_size=256
     let mut model = Model::new(
-        FlattenLayer::new((1, 28, 28, 1).into_dimension())
-            .linear(28 * 28, 500)
+        InputLayer::new()
+            .conv_2d(32, 3, 3, 1)
             .relu()
-            .linear(500, 100)
+            .max_pool_2d(2)
+            .conv_2d(32, 3, 3, 32)
             .relu()
-            .linear(100, 10)
+            .max_pool_2d(2)
+            .flatten((1, 6, 6, 32))
+            .linear(6 * 6 * 32, 128)
+            .relu()
+            .linear(128, 10)
             .softmax()
             .parallel(8),
         CategoricalCrossEntropyLoss,
@@ -77,7 +94,7 @@ fn main() {
     model.set_learning_rate(0.3);
 
     let num_epochs = 5;
-    let batch_size = 256;
+    let batch_size = 128;
     let t0 = Instant::now();
     model.train_epochs(training_epochs(
         x_train.view(),

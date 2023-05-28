@@ -50,12 +50,10 @@ impl<D: Dimension + RemoveAxis> Layer<D> for FlattenLayer<D> {
         _tmp: ArrayViewMut2<'_, f32>,
         mut y: ArrayViewMut2<'_, f32>,
     ) {
-        let size = self.input_shape.size();
-        let n = x.shape()[0];
-        y.assign(
-            &x.into_shape((n, size))
-                .expect("rows of x should match self.input_shape"),
-        );
+        assert_eq!(x.len(), y.len());
+        for (x, y) in x.iter().copied().zip(y.iter_mut()) {
+            *y = x;
+        }
     }
 
     fn derivatives(

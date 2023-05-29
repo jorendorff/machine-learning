@@ -115,12 +115,12 @@ mod tests {
     fn striding() {
         let a = (0..200).collect::<Array1<i32>>();
         let v = a.slice(s![30..130]);
-        let v2 = reshape_splitting(v, Dim([10, 10]));
+        let v2 = reshape_splitting(v, Ix2(10, 10));
         assert_eq!(v2[[0, 0]], 30);
         assert_eq!(v2[[0, 1]], 31);
         assert_eq!(v2[[1, 0]], 40);
 
-        let v3 = reshape_splitting(v, Dim([2, 2, 5, 5]));
+        let v3 = reshape_splitting(v, Ix4(2, 2, 5, 5));
         assert_eq!(v3[[0, 0, 0, 0]], 30);
         assert_eq!(v3[[0, 0, 0, 1]], 31);
         assert_eq!(v3[[0, 0, 1, 0]], 35);
@@ -128,8 +128,8 @@ mod tests {
         assert_eq!(v3[[1, 0, 0, 0]], 80);
 
         let v = a.slice(s![100..130]);
-        let v4 = reshape_splitting(v, Dim([6, 5]));
-        let v5 = reshape_splitting(v4, Dim([2, 3, 5]));
+        let v4 = reshape_splitting(v, Ix2(6, 5));
+        let v5 = reshape_splitting(v4, Ix3(2, 3, 5));
         assert_eq!(v5[[0, 0, 0]], 100);
         assert_eq!(v5[[0, 0, 1]], 101);
         assert_eq!(v5[[0, 1, 0]], 105);
@@ -140,15 +140,20 @@ mod tests {
     #[should_panic]
     fn bad_split_1() {
         let a: Array2<f32> = Array::zeros((10, 10));
-        reshape_splitting(a.view(), Dim([100]));
+        reshape_splitting(a.view(), Ix1(100));
     }
 
     #[test]
     #[should_panic]
     fn bad_split_2() {
         let a: Array4<f32> = Array::zeros((2, 2, 5, 5));
-        reshape_splitting(a.view(), Dim([2, 2, 25]));
+        reshape_splitting(a.view(), Ix3(2, 2, 25));
     }
 
-    // -   `(6, 5)` to `(3, 5, 2)` - bad
+    #[test]
+    #[should_panic]
+    fn bad_split_3() {
+        let a: Array2<f32> = Array::zeros((6, 5));
+        reshape_splitting(a.view(), Ix3(3, 5, 2));
+    }
 }

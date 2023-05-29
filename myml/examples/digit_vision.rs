@@ -88,13 +88,13 @@ fn main() {
             .relu()
             .linear(128, 10)
             .softmax()
-            .parallel(8),
+            .parallel(4),
         CategoricalCrossEntropyLoss,
     );
-    model.set_learning_rate(0.3);
+    model.set_learning_rate(0.25);
 
     let num_epochs = 5;
-    let batch_size = 128;
+    let batch_size = 64;
     let t0 = Instant::now();
     model.train_epochs(training_epochs(
         x_train.view(),

@@ -3054,6 +3054,11 @@ forever.
 
 STANFORD POINT
 
+## Digit-vision project
+
+A dense network can get you to 97%. A convolutional net is much slower, but even
+a poor one can get you to 96% in *a single epoch*, and 99% in 5 epochs.
+
 
 ## Readings
 
@@ -3061,7 +3066,31 @@ STANFORD POINT
 
 https://arxiv.org/pdf/1706.03762v5.pdf
 
-Page 3 of the paper clearly lays out the model.
+Page 3 of the paper clearly lays out the model. The boxes that show Multi-Head Attention
+have three inbound arrows because they have three inputs: keys, values, and queries.
+
+In the famous diagram, is it showing that the *final* output of the encoder is
+used as the keys and values for each player of the decoder? That would make
+sense; but then, it wouldn't necessarily have to be N=6 for both...
+
+Section 3 explains in detail.
+
+
+#### Interlude: Encoders, decoders
+
+How to remember which is the "encoder" and which is the "decoder": In a
+sequence-to-sequence model, the encoder comes first. You encode, then decode.
+That's the same order as the jargon term "codec" (from "coder/decoder"). So the
+"encoded-ness" is from the human's perspective.
+
+The reason I get this mixed up is that of course from the model's perspective
+it's the opposite: it has to parse (decode) tokens or what-have-you into an
+internal representation it can work with, then at the end re-encode them in
+some human-friendly form.
+
+Since then I've seen the words "encode" and "represent" used in a paper about
+the evolution of linguistics. So these may terms come from linguistics or
+cognitive science originally.
 
 
 ### Ba et al. Layer normalization. 2016.
@@ -3096,6 +3125,7 @@ So generally the idea is, transpose this idea and normalize using the
 statistics across the whole layer, separately for each training case, rather
 than statistics across training cases but separately for each unit in the
 model.
+
 
 ### Iandola et al. SqueezeNet: AlexNet-level accuracy with 50x fewer parameters and <0.5MB model size. 2016.
 
@@ -3185,9 +3215,14 @@ Another whole suite of questions, I think about 0.7% of the test, check whether
 you think "they" can have a singular referent; to get the questions right you
 have to indicate that "he" or "she" is better.
 
-There is something prescriptivist about any grammar test. They tried to confirm that the test is linked to real English usage by validating it with a crowd-sourced survey, and to their credit the repo is public and includes the raw results of the survey.
+There is something prescriptivist about any grammar test. They tried to confirm
+that the test is linked to real English usage by validating it with a
+crowd-sourced survey, and to their credit the repo is public and includes the
+raw results of the survey.
 
-Less flatteringly, the survey covers less than 400 of the 67,000 questions, and still there are a handful of questions in the survey where human subjects got them "wrong" more than half the time:
+Less flatteringly, the survey covers less than 400 of the 67,000 questions, and
+still there are a handful of questions in the survey where human subjects got
+them "wrong" more than half the time:
 
     1. (45%)
       A - It's himself that this cashier attacked.
@@ -3252,6 +3287,67 @@ encounter with fragrant hyacinths", or "the burying of the egg near the sea in
 the light of the full moon". Lamentable conditions are also occasionally
 cured by people, particularly popes. But still.
 
+
+### (podcast) Gradient Dissent: Scaling LLMs and Accelerating Adoption with Aidan Gomez at Cohere
+
+https://podcast.wandb.com/episode/scaling-llms-and-accelerating-adoption-with-aidan-gomez-at-cohere
+
+I wonder what techniques he's talking about in response to the question at
+10:28. There doesn't seem to be anything called "ALIBI", except some sort of
+differential privacy thing.
+
+Did eventually find ALiBI, <https://arxiv.org/pdf/2108.12409.pdf>. I definitely
+want to read it, but there is a lot more to read first.
+
+
+### Peters et al. Deep contextualized word representations 2018. (ELMo)
+
+The ELMo paper. Stands for "Embeddings from Language Models".
+
+https://arxiv.org/pdf/1802.05365.pdf
+
+I have so many questions.
+
+After reading the whole paper, it seems a bit questionable even referring to
+these as "embeddings". Yes, it's pretrained without reference to the task; but
+"in most cases we used a fine-tuned biLM in the downstream task". It seems
+possible the paper has really discovered that "model airplanes can fly at Mach
+2 if you just strap an F-16 to them". That is, put a giant state-of-the-art
+language model at the start of your net, go out of your way to expose its
+internal activations, and your net can learn to do the last, most effortless
+step, picking out the answer from among the many answers provided.
+
+To me, ELMo reads more like transfer learning (from C4W2L09) -- chopping off
+the last layers from one model to get a pre-trained half network to use for a
+new task, a huge head start. But with ELMo, they let the task model decide how
+many layers to truncate (by training these *s* parameters). That is cool! But
+not at all how it's presented.
+
+One way these fail to be "word embeddings" as I think of them is that the
+vectors it computes must be quite different per task.
+
+Why no diagrams? Does the author hate me? Searches for "ELMo: The Missing
+Figures" turned up nothing. Similarly I want to know the exact layers here and
+the number of units (= vector size) in each layer.
+
+I'm surprised the gains were not more impressive!
+
+
+### Nanda et al. Progress measures for grokking via mechanistic interpretability. Jan 2023.
+
+https://arxiv.org/abs/2301.05217
+
+I'm unable to tell what the network is. Where is the code?
+
+But they cite another paper
+https://transformer-circuits.pub/2021/framework/index.html that explains many
+unusual conventions. The paper also has the prettiest picture I've seen of the
+transformer architecture:
+https://transformer-circuits.pub/2021/framework/index.html#high-level-architecture
+And it is full of insights about what transformers are doing. I need to read
+this. But first I think I will watch the Karpathy nanoGPT video. I want a
+little hands-on experience with the things, and I think he uses PyTorch which I
+also want to learn.
 
 
 ## Random musings

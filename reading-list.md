@@ -1,0 +1,85 @@
+# To read (papers)
+
+Top 5:
+
+-   Vaswani et al. Attention is all you need. 2017.
+    https://arxiv.org/pdf/1706.03762v5.pdf
+
+-   Elhage et al. A mathematical framework for transformer circuits. Dec 2021.
+    https://transformer-circuits.pub/2021/framework/index.html
+
+-   Tenney et al. What do you learn from context? 2019.
+    https://arxiv.org/pdf/1905.06316.pdf
+
+-   Graves, Alex. Generating sequences with recurrent neural networks. 2014.
+    https://arxiv.org/pdf/1308.0850.pdf
+
+-   Kitaev and Klein. Constituency parsing with a self-attentive encoder. July 2018.
+
+
+## Honorable mention
+
+-   Kiros et al. Skip-thought vectors. 2015.
+    https://arxiv.org/pdf/1506.06726.pdf
+
+-   (the DistBelief paper) Dean et al. Large scale distributed deep networks. 2012.
+    https://proceedings.neurips.cc/paper/2012/file/6aca97005c68f1206823815f66102863-Paper.pdf
+
+    About parallelization of training across machines.
+
+-   (the BERT paper) Devlin et al. BERT: Pre-training of deep bidirectional transformers for language understanding. 2018.
+    https://arxiv.org/pdf/1810.04805.pdf
+
+-   Poli et al. Hyena hierarchy: towards larger convolutional language models.
+    Stanford research blog post, March 2023.
+
+    https://hazyresearch.stanford.edu/blog/2023-03-07-hyena
+
+    Can't quite read this yet.
+
+-   Stern, Andreas, and Klein. A Minimal Span-Based Neural Constituency Parser.
+    https://aclanthology.org/P17-1076.pdf
+
+-   Gu, Goel, R. Efficiently Modeling Long Sequences with Structured State Spaces. Oct 2021.
+
+-   2017 AlphaZero https://blog.acolyer.org/2018/01/10/mastering-chess-and-shogi-by-self-play-with-a-general-reinforcement-learning-algorithm/
+
+-   2017 AlphaGo Zero https://blog.acolyer.org/2017/11/17/mastering-the-game-of-go-without-human-knowledge/
+
+-   (the ALiBi paper) Train Short, Test Long: Attention with linear biases
+    enables input length extrapolation. https://arxiv.org/pdf/2108.12409.pdf
+
+-   (the GPT paper) Radford et al. Improving language understanding by generative pre-training. 2018.
+    https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf
+
+-   Nanda et al. Progress measures for grokking via mechanistic interpretability. Jan 2023.
+    https://arxiv.org/pdf/2301.05217.pdf
+
+
+# Videos and courses
+
+## CS224N: Natural Language Processing with Deep Learning
+
+http://web.stanford.edu/class/cs224n/
+
+Videos of the 2021 version of the course are on youtube.
+https://www.youtube.com/playlist?list=PLoROMvodv4rOSH4v6133s9LFPRHjEmbmJ
+
+This is the course that has its own podcast. Very much want to do this one.
+
+## fastbook
+
+fast.ai has a book, covering PyTorch:
+https://github.com/fastai/fastbook/blob/master/01_intro.ipynb
+
+and a course: https://course.fast.ai/
+
+I wonder if I can just read all those notebooks. There's also a MOOC and an
+O'Reilly book; it's bizarrely confusing.
+
+
+## Computational linear algebra
+
+https://github.com/fastai/numerical-linear-algebra/blob/master/README.md
+
+Ten videos, top-down.

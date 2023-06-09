@@ -3350,6 +3350,53 @@ little hands-on experience with the things, and I think he uses PyTorch which I
 also want to learn.
 
 
+### Bengio et al. A neural probabilistic language model. 2003.
+
+https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf
+
+-   Q: This talks of the model in terms of a function on n words that
+    approximates the probability of the last of those words, given that the
+    others preceded it. I assume this in turn is approximated by a continuous
+    function on word-vectors. Is that what modern LLMs do? Do they have to, for
+    each word they generate, search representation-space by doing gradient
+    ascent on this function to find a maximum, then do k-nn on that point in
+    representation space to find a word?
+
+word2vec didn't come along until 2013, according to Wikipedia. So what is this
+paper?
+
+
+### Elhage et al. A mathematical framework for transformer circuits. Dec 2021.
+
+by many authors, for Anthropic
+
+https://transformer-circuits.pub/2021/framework/index.html#high-level-architecture
+
+#### What is the self-attention part of a transformer really?
+
+I hesitated to look for a paper introducing attention or self-attention,
+because it was invented with reference to RNNs, but that was silly. Still,
+here's what I gather from the "Attention is all you need" paper, this
+"circuits" paper, and [this blog
+post](https://towardsdatascience.com/illustrated-self-attention-2d627e33b20a):
+
+The input is a vector per token. First we multiply every vector by a
+parameter-matrix to produce "values" to be queried. And I guess by a different
+matrix to produce "keys", and yet another matrix to produce "queries". The one
+for values needs to be square -- because there's a residual link around this
+self-attention layer, we don't change the size. Keys and values have to be the
+same size; I imagine those will be square too.
+
+Next, dot each query vector with each key vector to determine how well the
+query matches that key. Transformers use a scaled dot product. Then do a
+softmax for each query, across all keys, to normalize. Lastly, for each token,
+compute a weighted average of all values, weighted by the normalized matching
+results. That's the output.
+
+
+
+
+
 ## Random musings
 
 My new favorite ML paper is

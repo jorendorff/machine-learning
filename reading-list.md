@@ -17,6 +17,33 @@ Top 5:
 -   Kitaev and Klein. Constituency parsing with a self-attentive encoder. July 2018.
 
 
+## More on parsing
+
+What is a "discriminative" model? What is a "chart-based" model?
+
+-   James Henderson. Inducing History Representations for Broad Coverage
+    Statistical Parsing. 2003.
+    https://aclanthology.org/N03-1014.pdf
+
+-   Greg Durrett and Dan Klein. Neural crf parsing. July 2015.
+
+-   Wei et al. In-order chart-based dependency parsing. 2021.
+    https://arxiv.org/pdf/2102.04065.pdf
+
+-   Stern et al. A minimal span-based neural constituency parser.
+    https://aclanthology.org/P17-1076.pdf
+
+    "An alternative line of work focuses on *chart parsers*, which use
+    log-linear or neural scoring potentials to parameterize a tree-structured
+    dynamic program for maximization or marginalization."
+
+-   Hall et al. Less grammar, more features.
+
+I have found it harder to get into this literature. It seems to require some
+actual knowledge. ... It makes me want to try just using transformers and
+transfer learning and see what happens.
+
+
 ## Honorable mention
 
 -   Kiros et al. Skip-thought vectors. 2015.

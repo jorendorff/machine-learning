@@ -106,7 +106,7 @@ Can I remember the loss function for logistic regression from memory?
 He says they don't use the square of the error `sum((yhat - y)**2)` because it
 makes the optimization problem non-convex.
 
-    So I think what they use is `avg(-(y log yhat + (1-y) log (1-yhat)))`.
+So I think what they use is `avg(-(y log yhat + (1-y) log (1-yhat)))`.
 
 
 ## Explanation of logistic regression's cost function (C1W2L18)
@@ -2925,8 +2925,8 @@ make plans; and in fact chimps have much better short-term memory than human
 beings do. Relative to that, if you look through the history of life on earth,
 human beings developed language really recently. How recently, we kind of
 actually don't know, because there's no fossils that say, here's a language
-speaker. But most people estimate that language arose human beings somewhere in
-the range of 100,000 to a million years ago. Compared to the process of
+speaker. But most people estimate that language arose in human beings somewhere
+in the range of 100,000 to a million years ago. Compared to the process of
 evolution of life on earth, that's blinking an eyelid. But that power --
 communication between human beings -- quickly set off our ascendancy over other
 creatures. It's interesting that the ultimate power turned out not be posionous
@@ -3007,7 +3007,8 @@ I wonder if the difference between singular and plural words, i.e. the average
 of `v(sock) - v(socks)` over many singular-plural noun-pairs, is mainly along a
 single dimension of the vector. I think it would make sense either way. It
 would be interesting to see how that plays out for the other relations Mikolov
-et al. used for evaluation in the original word2vec paper.
+et al. used for evaluation in the original word2vec paper. Can you rotate the
+space so that each relation is on an axis? And if you do: then what?
 
 It seems clear that 300-vectors can record only 300 orthogonal distinctions for
 a given class of words... I wonder how much of the syntactic precision of GPT
@@ -3033,7 +3034,7 @@ of a sphere is really a super-rich manifold with "plenty of space" for complex
 relationships to stretch out across n-1 dimensions. I keep thinking kind of
 dumb thoughts, like that it doesn't make any sense to do vector math on these
 things, since it's not possible for A - B + C to be on the surface of the
-sphere. Of course if
+sphere.
 
 ----
 
@@ -3362,8 +3363,13 @@ https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf
     ascent on this function to find a maximum, then do k-nn on that point in
     representation space to find a word?
 
-word2vec didn't come along until 2013, according to Wikipedia. So what is this
-paper?
+-   Q: word2vec didn't come along until 2013, according to Wikipedia. So what is this
+    paper?
+
+    A: word2vec was special because you could train it on a billion tokens in a
+    day. This was the result of optimization work that made it computationally
+    cheaper. Start with Morin and Bengio 2005, "Hierarchical Probabilistic
+    Neural Network Language Model", below.
 
 
 ### Elhage et al. A mathematical framework for transformer circuits. Dec 2021.
@@ -3394,6 +3400,92 @@ compute a weighted average of all values, weighted by the normalized matching
 results. That's the output.
 
 
+Much more to read here.
+
+
+### Frederic Morin and Yoshua Bengio. Hierarchical Probabilistic Neural Network Language Model. 2005.
+
+This paper explains the technique that made word2vec computationally feasible.
+It's slow at getting to the point but does a good job explaining itself.
+In short:
+
+Consider a language model that predicts the next token. Vocabulary size is V.
+The network can produce an output for each possible token (V outputs) and then
+do softmax to produce probability estimates. Producing these V numbers can be
+the most expensive part (and for word2vec it overwhelmingly is). But you need
+them all to do softmax.
+
+The paper proposes instead classifying all the tokens in a binary hierarchy
+(like a follower of Petrus Ramus). Instead of computing probabilities for every
+token, you start at the root of the hierarchy and simply pick the likelier
+branch at each step. This reduces the cost from `V` to `log V`.
+
+Since the computation does not use most parameters, backpropagation and updates
+are smaller too.
+
+A surprise is that during training, you never actually fully predict the next
+token. You follow the path to the *actual* next token, rather than actually follow
+any wrong turns your model would have predicted.
+
+Another big surprise is section 4. The predictor for deciding which branch to take
+is
+
+-   linear combination of (the word-embeddings of the context tokens, plus
+    an embedding representing the current node), using the same weights and
+    biases across all nodes; only the node-embedding is node-specific.
+
+-   apply tanh to that
+
+-   scale with a per-node weight and bias (two extra parameters per node)
+
+-   sigmoid (in place of softmax) to decide: logistic regression.
+
+That is, the bulk of the parameters are shared across all nodes.
+
+I think in word2vec they might use a simpler predictor.
+
+Section 5 says how they build the binary tree, using WordNet. The first part is
+straightforward enough: WordNet contains a graph of IS-A relations on
+word-senses that is "almost a tree". They begin by hacking it into a tree.
+Then, associate each word with a node in this tree. (But we need every word to
+be at a leaf node. They don't say what is supposed to happen when a word like
+"animal" is assigned to a node that has many children: "cat", "squid", etc.
+Maybe you can arbitrarily sink it into one of the children.) Since the IS-A
+tree isn't a binary tree, they then use k-means clustering to split the many
+children of a node into two lumps. But I don't understand how that works. The
+end of the paragraph is about TF/IDF scores and I don't understand it. It all
+sounds rather messy. I'm sure word2vec does this differently.
+
+I wonder:
+
+-   Seems like this would make predictions worse sometimes. For example, if the
+    next word in the text is a past participle being used after the word "the",
+    probably the noun branch of the tree will dominate and the verb branch will
+    be nowhere. You'll miss. Do they quantify that?
+
+-   But I guess the model would also train to compensate. If that's possible.
+
+-   Is something like this still used today in LLMs? Or are they so
+    spectacularly expensive already that it doesn't matter? (They do have many
+    dense layers and a width of like 1000.)
+
+
+### Mikolov et al. Efficient estimation of word representations in vector space. 2013.
+
+Paper focuses on computational complexity of training to produce an exciting
+new system that can "learn high quality word vectors" from a 1.6-billion token
+training set in less than a day.
+
+This mentions latent semantic analysis (LSA) and latent Dirichlet alloacation
+(LDA).
+
+Not clear on how the binary tree (binary hierarchical classification of all
+tokens) is constructed. They say that it's a Huffman tree and then claim that
+"frequency of words works well for obtaining classes in neural net language
+models", citing a 2011 paper by Mikolov and some associates
+<https://sci-hub.st/https://doi.org/10.1109/ICASSP.2011.5947611>.
+
+Much more to read here.
 
 
 

@@ -82,6 +82,16 @@ transfer learning and see what happens.
 -   Nanda et al. Progress measures for grokking via mechanistic interpretability. Jan 2023.
     https://arxiv.org/pdf/2301.05217.pdf
 
+-   HOGWILD! https://arxiv.org/pdf/1106.5730.pdf
+
+-   Bahdanau et al. Neural machine translation by jointly learning to align and
+    translate. 2014. https://arxiv.org/abs/1409.0473
+
+-   Cho et al. Learning phrase representations using RNN encoder-decoder for
+    statistical machine translation. 2014. https://arxiv.org/abs/1406.1078
+
+-   Sutskever et al. Sequence to sequence learning with neural networks. 2014.
+    https://arxiv.org/abs/1409.3215
 
 # Videos and courses
 

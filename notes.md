@@ -3355,6 +3355,18 @@ also want to learn.
 
 https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf
 
+The basic idea being explored is simultaneously training (a) word-vectors and
+(b) a language model.
+
+The training set is about 14 million words -- tiny by today's standards.
+
+They include a bunch of practical details, like how they distributed the work
+using a cluster of 32 x 2 CPUs on a low-latency LAN (...it was CPUs back then,
+I guess, no GPU compute, much less cloud TPU).
+
+A lot of ink is dedicated to showing their model is better than statistical
+models based on n-grams (the state of the art at the time).
+
 -   Q: This talks of the model in terms of a function on n words that
     approximates the probability of the last of those words, given that the
     others preceded it. I assume this in turn is approximated by a continuous
@@ -3362,6 +3374,15 @@ https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf
     each word they generate, search representation-space by doing gradient
     ascent on this function to find a maximum, then do k-nn on that point in
     representation space to find a word?
+
+    A: I don't know, but I doubt that is the algorithm. For one thing, the
+    global maximum may not be near any word (I've had the experience of groping
+    for a word that simply doesn't exist). And of course gradient ascent isn't
+    guaranteed to find the global maximum anyway. Instead you evaluate the
+    function for every possible next word, and choose the most likely. I wonder
+    now if there are ways to prune this search that are effective in practice
+    and don't compromise on accuracy. (Morin and Bengio 2005 gives a way that
+    compromises on accuracy.)
 
 -   Q: word2vec didn't come along until 2013, according to Wikipedia. So what is this
     paper?
@@ -3470,7 +3491,7 @@ I wonder:
     dense layers and a width of like 1000.)
 
 
-### Mikolov et al. Efficient estimation of word representations in vector space. 2013.
+### Mikolov et al. (the word2vec paper) Efficient estimation of word representations in vector space. 2013.
 
 Paper focuses on computational complexity of training to produce an exciting
 new system that can "learn high quality word vectors" from a 1.6-billion token
@@ -3485,8 +3506,29 @@ tokens) is constructed. They say that it's a Huffman tree and then claim that
 models", citing a 2011 paper by Mikolov and some associates
 <https://sci-hub.st/https://doi.org/10.1109/ICASSP.2011.5947611>.
 
-Much more to read here.
+The paper uses the phrase "log-linear classifier" which is a terrible way of
+saying: one dense layer with biases (the linear part) followed by something
+exponential, like softmax. <https://en.wikipedia.org/wiki/Log-linear_model>
 
+> Note that the weight matrix between the input and the projection layer is
+> shared for all word positions in the same way as in the NNLM.
+
+Also awkward phrasing -- notionally, the input comes in as one-hot vectors and
+gets "multiplied" by this "matrix" which is just the array of word embeddings
+we're training. They mean the embeddings are the same for words regardless of
+their position in the context. But of course in reality this is not used as a
+"weight matrix"; no matrix multiplication happens, just an array lookup. The
+one-hot vectors are not actually constructed.
+
+It is wild to me that the skip-gram model works, because the task is super
+hard, essentially impossible. Perplexity is going to be high. The distribution
+to be learned, the ideal distribution, is a symmetric V×V matrix; the model has
+about 2VD weights.
+
+The stunner is Table 4, where the performance is compared to a bunch of other
+NNLMs. Skip-gram gets 53% on the analogy test set. No prior art breaks 25%.
+That model trained on 783M words, using a single CPU (in 2013, which seems like
+a weird flex), taking about three days.
 
 
 ## Random musings

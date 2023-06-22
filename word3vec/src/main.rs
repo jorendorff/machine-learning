@@ -7,9 +7,9 @@ use std::io::{self, BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFr
 use std::iter;
 use std::path::{Path, PathBuf};
 use std::slice;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Instant;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use aligned_box::AlignedBox;
 use anyhow::{Context, Result};
@@ -366,6 +366,14 @@ impl Word3Vec {
     fn learn_vocab_from_train_file(&mut self) -> Result<()> {
         let mut fin =
             File::open(&self.options.train_file).context("error opening training data file")?;
+        fin.seek(SeekFrom::End(0))
+            .context("error checking training data file size")?;
+        self.file_size = fin
+            .stream_position()
+            .context("error checking training data file size")?;
+        fin.seek(SeekFrom::Start(0))
+            .context("error checking training data file size")?;
+
         self.vocab.clear();
         self.vocab_hash.clear();
         self.add_word_to_vocab("</s>".to_string());
@@ -393,9 +401,6 @@ impl Word3Vec {
             println!("Vocab size: {}", self.vocab.len());
             println!("Words in train file: {}", self.train_words);
         }
-        self.file_size = fin
-            .stream_position()
-            .context("error reading training data file")?;
         Ok(())
     }
 
@@ -410,8 +415,7 @@ impl Word3Vec {
     }
 
     fn read_vocab(&mut self, vocab_file: &Path) -> Result<()> {
-        let mut fin =
-            BufReader::new(File::open(vocab_file).context("error opening vocabulary file")?);
+        let fin = BufReader::new(File::open(vocab_file).context("error opening vocabulary file")?);
         self.vocab_hash.clear();
         self.vocab.clear();
 
@@ -430,7 +434,7 @@ impl Word3Vec {
             ))?;
 
             let a = self.add_word_to_vocab(word);
-            self.vocab[1].cn = cn;
+            self.vocab[a].cn = cn;
         }
         self.sort_vocab();
         if self.options.debug_mode > 0 {
@@ -438,7 +442,8 @@ impl Word3Vec {
             println!("Words in train file: {}", self.train_words);
         }
 
-        let mut fin = File::open(self.options.train_file).context("error opening training file")?;
+        let mut fin =
+            File::open(&self.options.train_file).context("error opening training file")?;
         fin.seek(SeekFrom::End(0))
             .context("error checking size of training file")?;
         self.file_size = fin
@@ -474,28 +479,6 @@ impl Word3Vec {
     }
 
     fn train_model_thread(&self, id: usize) -> Result<()> {
-        let mut a: usize;
-        let mut b: usize;
-        let mut d: usize;
-        let mut cw: usize;
-        let mut word: usize;
-        let mut last_word: usize;
-        let mut sentence_length: usize = 0;
-        let mut sentence_position: usize = 0;
-        let mut word_count: u64 = 0;
-        let mut last_word_count: u64 = 0;
-        let mut sen: [usize; MAX_SENTENCE_LENGTH + 1];
-        let mut l1: usize;
-        let mut l2: usize;
-        let mut c: usize;
-        let mut target: usize;
-        let mut label: usize;
-        let mut local_iter = self.options.iter;
-        let mut next_random = id;
-        let mut f: real;
-        let mut g: real;
-        let mut now: Instant;
-
         let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
         let mut neu1e: Vec<real> = vec![0.0; self.options.layer1_size];
 
@@ -504,19 +487,34 @@ impl Word3Vec {
             self.file_size / self.options.num_threads as u64 * id as u64,
         ))
         .context("error seeking within training file")?;
-        // let mut words = self.read_words_index(fi);
-        // read_words(fi).map(|res| res.map(|word| self.search_vocab(&word)))
+        let mut words = read_words(fi);
 
+        let mut next_random = id as u64;
         let mut alpha = self.starting_alpha;
+        let mut local_iter = self.options.iter;
+        let mut word_count: u64 = 0;
+        let mut last_word_count: u64 = 0;
+        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
+        let mut sentence_position: usize = 0;
         loop {
+            //let mut a: usize;
+            //let mut d: usize;
+            //let mut cw: usize;
+            //let mut last_word: usize;
+            //let mut l1: usize;
+            //let mut l2: usize;
+            //let mut c: usize;
+            //let mut target: usize;
+            //let mut label: usize;
+            //let mut f: real;
+            //let mut g: real;
+
             if word_count - last_word_count > 10000 {
                 let n = word_count - last_word_count;
-                let word_count_actual =
-                    self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+                let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
                 last_word_count = word_count;
 
                 if self.options.debug_mode > 1 {
-                    now = Instant::now();
                     println!(
                         "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k",
                         alpha,
@@ -524,62 +522,77 @@ impl Word3Vec {
                             / (self.options.iter as u64 * self.train_words + 1) as real
                             * 100.0,
                         word_count_actual as real
-                            / (((now - self.start).as_secs_f64() + 1.0) as real * 1000.0),
+                            / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
                     );
                 }
-                alpha =
-                    self.starting_alpha
-                        * (1.0
-                           - word_count_actual as real
-                           / (self.options.iter as u64 * self.train_words + 1) as real).max(0.0001);
+                alpha = self.starting_alpha
+                    * (1.0
+                        - word_count_actual as real
+                            / (self.options.iter as u64 * self.train_words + 1) as real)
+                        .max(0.0001);
             }
 
             let mut at_end_of_file = false;
-            if sentence_length == 0 {
+            if sen.is_empty() {
                 loop {
-                    todo!();
-                    /*
-                    word = ReadWordIndex(fi);
-                    if (feof(fi)) { at_end_of_file = true; break; }
-                    if (word == -1) continue;
-                    word_count++;
-                    if (word == 0) break;
-                    // The subsampling randomly discards frequent words while keeping the ranking same
-                    if (sample > 0) {
-                        real ran = (sqrt(vocab[word].cn / (sample * train_words)) + 1) * (sample * train_words) / vocab[word].cn;
-                        next_random = next_random * (unsigned long long)25214903917 + 11;
-                        if (ran < (next_random & 0xFFFF) / (real)65536) continue;
+                    let word_str = match words.next() {
+                        Some(result) => result.context("error reading a word from training data")?,
+                        None => {
+                            at_end_of_file = true;
+                            break;
+                        }
+                    };
+                    let word = match self.search_vocab(&word_str) {
+                        Some(i) => i,
+                        None => continue,
+                    };
+                    word_count += 1;
+                    if word == 0 {
+                        break;
                     }
-                    sen[sentence_length] = word;
-                    sentence_length++;
-                    if (sentence_length >= MAX_SENTENCE_LENGTH) break;
-                    */
+
+                    // The subsampling randomly discards frequent words while keeping the ranking same
+                    let sample = self.options.sample;
+                    if sample > 0.0 {
+                        let f = self.vocab[word].cn as real;
+                        let k = sample * self.train_words as real;
+                        let ran = ((f / k).sqrt() + 1.0) * k / f;
+                        next_random = next_random * 25214903917 + 11;
+                        if ran < (next_random & 0xFFFF) as real / 65536.0 {
+                            continue;
+                        }
+                    }
+                    sen.push(word);
+                    if sen.len() >= MAX_SENTENCE_LENGTH {
+                        break;
+                    }
                 }
                 sentence_position = 0;
             }
 
             if at_end_of_file || word_count > self.train_words / self.options.num_threads as u64 {
-                self.word_count_actual.fetch_add(word_count - last_word_count, Ordering::Relaxed);
+                self.word_count_actual
+                    .fetch_add(word_count - last_word_count, Ordering::Relaxed);
                 local_iter -= 1;
                 if local_iter == 0 {
                     break;
                 }
                 word_count = 0;
                 last_word_count = 0;
-                sentence_length = 0;
+                sen.clear();
                 fi.seek(SeekFrom::Start(
                     self.file_size / self.options.num_threads as u64 * id as u64,
-                )).context("error rewinding file for next iteration")?;
+                ))
+                .context("error rewinding file for next iteration")?;
                 continue;
             }
-            /*
-            word = sen[sentence_position];
-            if (word == -1) continue;
-            for (c = 0; c < layer1_size; c++) neu1[c] = 0.0;
-            for (c = 0; c < layer1_size; c++) neu1e[c] = 0.0;
-            next_random = next_random * (unsigned long long)25214903917 + 11;
-            b = next_random % window;
-            */
+
+            let word = sen[sentence_position];
+            neu1.fill(0.0);
+            neu1e.fill(0.0);
+            next_random = next_random * 25214903917 + 11;
+            let b = next_random as usize % self.options.window;
+
             if self.options.cbow {
                 //train the cbow architecture
                 todo!();
@@ -589,7 +602,7 @@ impl Word3Vec {
                 for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
                     c = sentence_position - window + a;
                     if (c < 0) continue;
-                    if (c >= sentence_length) continue;
+                    if (c >= sen.len()) continue;
                     last_word = sen[c];
                     if (last_word == -1) continue;
                     for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
@@ -637,7 +650,7 @@ impl Word3Vec {
                     for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
                         c = sentence_position - window + a;
                         if (c < 0) continue;
-                        if (c >= sentence_length) continue;
+                        if (c >= sen.len()) continue;
                         last_word = sen[c];
                         if (last_word == -1) continue;
                         for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
@@ -651,7 +664,7 @@ impl Word3Vec {
                  for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
                      c = sentence_position - window + a;
                      if (c < 0) continue;
-                     if (c >= sentence_length) continue;
+                     if (c >= sen.len()) continue;
                      last_word = sen[c];
                      if (last_word == -1) continue;
                      l1 = last_word * layer1_size;
@@ -699,9 +712,8 @@ impl Word3Vec {
                   */
             }
             sentence_position += 1;
-            if sentence_position >= sentence_length {
-                sentence_length = 0;
-                continue;
+            if sentence_position >= sen.len() {
+                sen.clear();
             }
         }
 
@@ -735,9 +747,7 @@ impl Word3Vec {
         thread::scope(|s| {
             let this: &Word3Vec = self;
             let threads = (0..this.options.num_threads)
-                .map(|a| {
-                    s.spawn(move || this.train_model_thread(a))
-                })
+                .map(|a| s.spawn(move || this.train_model_thread(a)))
                 .collect::<Vec<_>>();
             for thread in threads {
                 if let Err(err) = thread.join().unwrap() {

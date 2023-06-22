@@ -1,0 +1,10 @@
+[package]
+name = "word3vec"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aligned_box = "0.2"
+anyhow = "1.0"
+bytemuck = "1.13"
+clap = {version = "4.3", features = ["derive"]}

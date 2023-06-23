@@ -4,12 +4,10 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
-use std::iter;
 use std::path::{Path, PathBuf};
-use std::slice;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::thread;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
+use std::{iter, process, slice, thread};
 
 use aligned_box::AlignedBox;
 use anyhow::{Context, Result};
@@ -108,6 +106,27 @@ struct Options {
     cbow: bool,
 }
 
+#[derive(Default)]
+#[repr(transparent)]
+struct Real {
+    bits: AtomicU32,
+}
+
+impl Real {
+    fn get(&self) -> real {
+        real::from_bits(self.bits.load(Ordering::Relaxed))
+    }
+
+    fn set(&self, value: real) {
+        self.bits.store(value.to_bits(), Ordering::Relaxed);
+    }
+
+    fn add(&self, x: real) {
+        let a = self.get();
+        self.set(a + x);
+    }
+}
+
 struct Word3Vec {
     options: Options,
     vocab: Vec<VocabWord>,
@@ -120,9 +139,9 @@ struct Word3Vec {
     file_size: u64,
     starting_alpha: real,
     /// The learned word-vectors.
-    syn0: AlignedBox<[real]>,
-    syn1: AlignedBox<[real]>,
-    syn1neg: AlignedBox<[real]>,
+    syn0: AlignedBox<[Real]>,
+    syn1: AlignedBox<[Real]>,
+    syn1neg: AlignedBox<[Real]>,
     exp_table: Vec<real>,
     start: Instant,
     table: Vec<usize>,
@@ -140,6 +159,40 @@ fn read_byte(fin: &mut BufReader<File>) -> Option<Result<u8, io::Error>> {
             Err(e) => Some(Err(e)),
         };
     }
+}
+
+// Reads a single word from a file, assuming space + tab + EOL to be word boundaries
+fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
+    let mut word = vec![];
+    loop {
+        let b = match read_byte(fin) {
+            None => break,
+            Some(result) => result.context("error reading a word")?,
+        };
+
+        if b == b'\r' {
+            continue;
+        }
+        if b == b' ' || b == b'\t' || b == b'\n' {
+            if !word.is_empty() {
+                // TODO: PUT THE DAMN THING BACK
+                break;
+            }
+            if b == b'\n' {
+                return Ok(Some("</s>".to_string()));
+            } else {
+                continue;
+            }
+        }
+        if word.len() < MAX_STRING - 2 {
+            word.push(b); // Truncate too long words
+        }
+    }
+    Ok(if word.is_empty() {
+        None
+    } else {
+        Some(String::from_utf8_lossy(&word).to_string())
+    })
 }
 
 // Read words from a file, assuming space + tab + EOL to be word boundaries
@@ -238,12 +291,12 @@ impl Word3Vec {
         self.vocab_hash.get(word).copied()
     }
 
-    /// Reads words and returns their index in the vocabulary
-    fn read_words_index(
-        &self,
-        fin: File,
-    ) -> impl Iterator<Item = Result<Option<usize>, io::Error>> + '_ {
-        read_words(fin).map(|res| res.map(|word| self.search_vocab(&word)))
+    /// Reads a word and returns its index in the vocabulary
+    ///
+    /// returns `Ok(None)` at end of file, `Ok(Some(None))` if a word was read
+    /// but it's unrecognized.
+    fn read_word_index(&self, fin: &mut BufReader<File>) -> Result<Option<Option<usize>>> {
+        Ok(read_word(fin)?.map(|word| self.search_vocab(&word)))
     }
 
     /// Adds a word to the vocabulary
@@ -313,24 +366,24 @@ impl Word3Vec {
             count[a] = 1_000_000_000_000_000;
         }
 
-        let mut pos1 = vocab_size - 1;
+        let mut pos1 = vocab_size;
         let mut pos2 = vocab_size;
         // Following algorithm constructs the Huffman tree by adding one node at a time
         for a in 0..(vocab_size - 1) {
             // First, find two smallest nodes 'min1, min2'
             let min1i;
-            if pos1 >= 0 && count[pos1] < count[pos2] {
-                min1i = pos1;
+            if pos1 > 0 && count[pos1 - 1] < count[pos2] {
                 pos1 -= 1;
+                min1i = pos1;
             } else {
                 min1i = pos2;
                 pos2 += 1;
             }
 
             let min2i;
-            if pos1 >= 0 && count[pos1] < count[pos2] {
-                min2i = pos1;
+            if pos1 > 0 && count[pos1 - 1] < count[pos2] {
                 pos1 -= 1;
+                min2i = pos1;
             } else {
                 min2i = pos2;
                 pos2 += 1;
@@ -471,23 +524,26 @@ impl Word3Vec {
         for a in 0..vocab_size {
             for b in 0..layer1_size {
                 next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
-                self.syn0[a * layer1_size + b] =
-                    (((next_random & 0xFFFF) as real / 65536.0) - 0.5) / layer1_size as real;
+                self.syn0[a * layer1_size + b]
+                    .set((((next_random & 0xFFFF) as real / 65536.0) - 0.5) / layer1_size as real);
             }
         }
         self.create_binary_tree();
     }
 
     fn train_model_thread(&self, id: usize) -> Result<()> {
+        let window = self.options.window;
+
         let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
         let mut neu1e: Vec<real> = vec![0.0; self.options.layer1_size];
 
-        let mut fi = File::open(&self.options.train_file)?;
+        let mut fi = BufReader::new(File::open(&self.options.train_file)?);
         fi.seek(SeekFrom::Start(
             self.file_size / self.options.num_threads as u64 * id as u64,
         ))
         .context("error seeking within training file")?;
-        let mut words = read_words(fi);
+
+        let layer1_size = self.options.layer1_size;
 
         let mut next_random = id as u64;
         let mut alpha = self.starting_alpha;
@@ -497,18 +553,6 @@ impl Word3Vec {
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
         let mut sentence_position: usize = 0;
         loop {
-            //let mut a: usize;
-            //let mut d: usize;
-            //let mut cw: usize;
-            //let mut last_word: usize;
-            //let mut l1: usize;
-            //let mut l2: usize;
-            //let mut c: usize;
-            //let mut target: usize;
-            //let mut label: usize;
-            //let mut f: real;
-            //let mut g: real;
-
             if word_count - last_word_count > 10000 {
                 let n = word_count - last_word_count;
                 let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
@@ -535,16 +579,16 @@ impl Word3Vec {
             let mut at_end_of_file = false;
             if sen.is_empty() {
                 loop {
-                    let word_str = match words.next() {
-                        Some(result) => result.context("error reading a word from training data")?,
+                    let word = self
+                        .read_word_index(&mut fi)
+                        .context("error reading a word from training data")?;
+                    let word = match word {
                         None => {
                             at_end_of_file = true;
                             break;
                         }
-                    };
-                    let word = match self.search_vocab(&word_str) {
-                        Some(i) => i,
-                        None => continue,
+                        Some(None) => continue,
+                        Some(Some(i)) => i,
                     };
                     word_count += 1;
                     if word == 0 {
@@ -595,121 +639,187 @@ impl Word3Vec {
 
             if self.options.cbow {
                 //train the cbow architecture
-                todo!();
-                /*
                 // in -> hidden
-                cw = 0;
-                for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-                    c = sentence_position - window + a;
-                    if (c < 0) continue;
-                    if (c >= sen.len()) continue;
-                    last_word = sen[c];
-                    if (last_word == -1) continue;
-                    for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
-                    cw++;
-                }
-                if (cw) {
-                    for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
-                    if (hs) for (d = 0; d < vocab[word].code.len(); d++) {
-                        f = 0;
-                        l2 = vocab[word].point[d] * layer1_size;
-                        // Propagate hidden -> output
-                        for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-                        if (f <= -MAX_EXP) continue;
-                        else if (f >= MAX_EXP) continue;
-                        else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-                        // 'g' is the gradient multiplied by the learning rate
-                        g = (1 - vocab[word].code[d] - f) * alpha;
-                        // Propagate errors output -> hidden
-                        for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-                        // Learn weights hidden -> output
-                        for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
-                    }
-                    // NEGATIVE SAMPLING
-                    if (negative > 0) for (d = 0; d < negative + 1; d++) {
-                        if (d == 0) {
-                            target = word;
-                            label = 1;
-                        } else {
-                            next_random = next_random * (unsigned long long)25214903917 + 11;
-                            target = table[(next_random >> 16) % TABLE_SIZE];
-                            if (target == 0) target = next_random % (vocab_size - 1) + 1;
-                            if (target == word) continue;
-                            label = 0;
+                let mut cw = 0;
+                for a in b..(window * 2 + 1 - b) {
+                    if a != window {
+                        if sentence_position + a < window {
+                            continue;
                         }
-                        l2 = target * layer1_size;
-                        f = 0;
-                        for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
-                        if (f > MAX_EXP) g = (label - 1) * alpha;
-                        else if (f < -MAX_EXP) g = (label - 0) * alpha;
-                        else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-                        for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-                        for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
-                    }
-                    // hidden -> in
-                    for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-                        c = sentence_position - window + a;
-                        if (c < 0) continue;
-                        if (c >= sen.len()) continue;
-                        last_word = sen[c];
-                        if (last_word == -1) continue;
-                        for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
+                        let c = sentence_position + a - window;
+                        if c >= sen.len() {
+                            continue;
+                        }
+                        let last_word = sen[c];
+
+                        for c in 0..layer1_size {
+                            neu1[c] += self.syn0[c + last_word * layer1_size].get();
+                        }
+                        cw += 1;
                     }
                 }
-                 */
+
+                if cw > 0 {
+                    for c in 0..layer1_size {
+                        neu1[c] /= cw as real;
+                        if self.options.hs {
+                            todo!();
+                            /*
+                            for (d = 0; d < vocab[word].code.len(); d++) {
+                                f = 0;
+                                l2 = vocab[word].point[d] * layer1_size;
+                                // Propagate hidden -> output
+                                for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
+                                if (f <= -MAX_EXP) continue;
+                                else if (f >= MAX_EXP) continue;
+                                else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+                                // 'g' is the gradient multiplied by the learning rate
+                                g = (1 - vocab[word].code[d] - f) * alpha;
+                                // Propagate errors output -> hidden
+                                for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+                                // Learn weights hidden -> output
+                                for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
+                            }
+                             */
+                        }
+                        // NEGATIVE SAMPLING
+                        if self.options.negative > 0 {
+                            todo!();
+                            /*
+                            for (d = 0; d < negative + 1; d++) {
+                                if (d == 0) {
+                                    target = word;
+                                    label = 1;
+                                } else {
+                                    next_random = next_random * 25214903917 + 11;
+                                    target = table[(next_random >> 16) % TABLE_SIZE];
+                                    if (target == 0) target = next_random % (vocab_size - 1) + 1;
+                                    if (target == word) continue;
+                                    label = 0;
+                                }
+                                l2 = target * layer1_size;
+                                f = 0;
+                                for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
+                                if (f > MAX_EXP) g = (label - 1) * alpha;
+                                else if (f < -MAX_EXP) g = (label - 0) * alpha;
+                                else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
+                                for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
+                                for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+                            }
+                             */
+                        }
+
+                        // hidden -> in
+                        for a in b..(window * 2 + 1 - b) {
+                            if a != window {
+                                if sentence_position + a < window {
+                                    continue;
+                                }
+                                let c = sentence_position + a - window;
+                                if c >= sen.len() {
+                                    continue;
+                                }
+                                let last_word = sen[c];
+
+                                for c in 0..layer1_size {
+                                    self.syn0[c + last_word * layer1_size].add(neu1e[c]);
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 //train skip-gram
-                todo!();
-                /*
-                 for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
-                     c = sentence_position - window + a;
-                     if (c < 0) continue;
-                     if (c >= sen.len()) continue;
-                     last_word = sen[c];
-                     if (last_word == -1) continue;
-                     l1 = last_word * layer1_size;
-                     for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
-                     // HIERARCHICAL SOFTMAX
-                     if (hs) for (d = 0; d < vocab[word].code.len(); d++) {
-                         f = 0;
-                         l2 = vocab[word].point[d] * layer1_size;
-                         // Propagate hidden -> output
-                         for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
-                         if (f <= -MAX_EXP) continue;
-                         else if (f >= MAX_EXP) continue;
-                         else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-                         // 'g' is the gradient multiplied by the learning rate
-                         g = (1 - vocab[word].code[d] - f) * alpha;
-                         // Propagate errors output -> hidden
-                         for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-                         // Learn weights hidden -> output
-                         for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
-                     }
-                     // NEGATIVE SAMPLING
-                     if (negative > 0) for (d = 0; d < negative + 1; d++) {
-                         if (d == 0) {
-                             target = word;
-                             label = 1;
-                         } else {
-                             next_random = next_random * (unsigned long long)25214903917 + 11;
-                             target = table[(next_random >> 16) % TABLE_SIZE];
-                             if (target == 0) target = next_random % (vocab_size - 1) + 1;
-                             if (target == word) continue;
-                             label = 0;
-                         }
-                         l2 = target * layer1_size;
-                         f = 0;
-                         for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1neg[c + l2];
-                         if (f > MAX_EXP) g = (label - 1) * alpha;
-                         else if (f < -MAX_EXP) g = (label - 0) * alpha;
-                         else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-                         for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-                         for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
-                     }
-                     // Learn weights input -> hidden
-                     for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
+                for a in b..(window * 2 + 1 - b) {
+                    if a != window {
+                        if sentence_position + a < window {
+                            continue;
+                        }
+                        let c = sentence_position + a - window;
+                        if c >= sen.len() {
+                            continue;
+                        }
+                        let last_word = sen[c];
+                        let l1 = last_word * layer1_size;
+                        neu1e.fill(0.0);
+                        // HIERARCHICAL SOFTMAX
+                        if self.options.hs {
+                            for d in 0..self.vocab[word].code.len() {
+                                // Propagate hidden -> output
+                                let l2 = self.vocab[word].point[d] as usize * layer1_size;
+                                let f = (0..layer1_size)
+                                    .map(|c| self.syn0[l1 + c].get() * self.syn1[l2 + c].get())
+                                    .sum::<real>();
+                                if f <= -MAX_EXP {
+                                    continue;
+                                } else if f >= MAX_EXP {
+                                    continue;
+                                }
+                                let f = self.exp_table[((f + MAX_EXP)
+                                    * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0))
+                                    as usize];
+                                // 'g' is the gradient multiplied by the learning rate
+                                let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                                // Propagate errors output -> hidden
+                                for c in 0..layer1_size {
+                                    neu1e[c] += g * self.syn1[c + l2].get();
+                                }
+                                // Learn weights hidden -> output
+                                for c in 0..layer1_size {
+                                    self.syn1[c + l2].add(g * self.syn0[c + l1].get());
+                                }
+                            }
+                        }
+
+                        // NEGATIVE SAMPLING
+                        if self.options.negative > 0 {
+                            for d in 0..(self.options.negative + 1) {
+                                let mut target;
+                                let label;
+                                if d == 0 {
+                                    target = word;
+                                    label = 1;
+                                } else {
+                                    next_random = next_random * 25214903917 + 11;
+                                    target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
+                                    if target == 0 {
+                                        target = next_random as usize % (self.vocab.len() - 1) + 1;
+                                    }
+                                    if target == word {
+                                        continue;
+                                    }
+                                    label = 0;
+                                }
+                                let l2 = target * layer1_size;
+                                let f = (0..layer1_size)
+                                    .map(|c| self.syn0[c + l1].get() * self.syn1neg[c + l2].get())
+                                    .sum::<real>();
+                                let yh = if f > MAX_EXP {
+                                    1.0
+                                } else if f < -MAX_EXP {
+                                    0.0
+                                } else {
+                                    self.exp_table[((f + MAX_EXP)
+                                        * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0))
+                                        as usize]
+                                };
+                                let g = (label as real - yh) * alpha;
+
+                                for c in 0..layer1_size {
+                                    neu1e[c] += g * self.syn1neg[c + l2].get();
+                                }
+                                for c in 0..layer1_size {
+                                    self.syn1neg[c + l2].add(g * self.syn0[c + l1].get());
+                                }
+                            }
+                        }
+
+                        // Learn weights input -> hidden
+                        for c in 0..layer1_size {
+                            self.syn0[c + l1].add(neu1e[c]);
+                        }
+                    }
                 }
-                  */
             }
             sentence_position += 1;
             if sentence_position >= sen.len() {
@@ -768,11 +878,12 @@ impl Word3Vec {
                     write!(fo, "{} ", vw.word).context("error writing output file")?;
                     let word_vec = &self.syn0[a * layer1_size..][..layer1_size];
                     if self.options.binary {
-                        fo.write_all(bytemuck::cast_slice::<real, u8>(word_vec))
+                        let word_vec = word_vec.iter().map(Real::get).collect::<Vec<real>>();
+                        fo.write_all(bytemuck::cast_slice::<real, u8>(&word_vec))
                             .context("error writing output file")?;
                     } else {
                         for f in word_vec {
-                            write!(fo, "{f} ").context("error writing output file")?;
+                            write!(fo, "{} ", f.get()).context("error writing output file")?;
                         }
                         writeln!(fo).context("error writing output file")?;
                     }
@@ -793,7 +904,7 @@ impl Word3Vec {
                     // Set cent[c] = sum of vectors in class c, centcn[c] = number of vectors in class c + 1
                     for c in 0..vocab_size {
                         for d in 0..layer1_size {
-                            cent[layer1_size * cl[c] + d] += self.syn0[c * layer1_size + d];
+                            cent[layer1_size * cl[c] + d] += self.syn0[c * layer1_size + d].get();
                         }
                         centcn[cl[c]] += 1;
                     }
@@ -819,7 +930,9 @@ impl Word3Vec {
                         let mut closeid = 0;
                         for d in 0..clcn {
                             let x = (0..layer1_size)
-                                .map(|b| cent[layer1_size * d + b] * self.syn0[c * layer1_size + b])
+                                .map(|b| {
+                                    cent[layer1_size * d + b] * self.syn0[c * layer1_size + b].get()
+                                })
                                 .sum::<real>();
                             if x > closev {
                                 closev = x;
@@ -845,5 +958,8 @@ fn main() {
     let options = Options::parse();
 
     let mut word3vec = Word3Vec::new(options);
-    word3vec.train_model();
+    if let Err(err) = word3vec.train_model() {
+        eprintln!("{err:#}");
+        process::exit(1);
+    }
 }

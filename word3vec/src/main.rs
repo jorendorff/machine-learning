@@ -133,7 +133,6 @@ struct Word3Vec {
     min_reduce: u64,
     vocab_hash: HashMap<String, usize>,
     vocab_max_size: usize,
-    vocab_size: usize,
     train_words: u64,
     word_count_actual: AtomicU64,
     file_size: u64,
@@ -250,14 +249,13 @@ impl Word3Vec {
             min_reduce: 1,
             vocab_hash: HashMap::new(),
             vocab_max_size,
-            vocab_size: 0,
             train_words: 0,
             word_count_actual: AtomicU64::new(0),
             file_size: 0,
             starting_alpha: 0.0,
-            syn0: AlignedBox::slice_from_default(128, 0).unwrap(),
-            syn1: AlignedBox::slice_from_default(128, 0).unwrap(),
-            syn1neg: AlignedBox::slice_from_default(128, 0).unwrap(),
+            syn0: AlignedBox::slice_from_default(128, 128).unwrap(),
+            syn1: AlignedBox::slice_from_default(128, 128).unwrap(),
+            syn1neg: AlignedBox::slice_from_default(128, 128).unwrap(),
             exp_table,
             start: Instant::now(),
             table: Vec::with_capacity(TABLE_SIZE),
@@ -280,8 +278,8 @@ impl Word3Vec {
                 i += 1;
                 d1 += (self.vocab[i].cn as f64).powf(power) / train_words_pow;
             }
-            if i >= self.vocab_size {
-                i = self.vocab_size - 1;
+            if i >= self.vocab.len() {
+                i = self.vocab.len() - 1;
             }
         }
     }
@@ -435,7 +433,8 @@ impl Word3Vec {
             let word = word.context("error reading training data file")?;
             self.train_words += 1;
             if self.options.debug_mode > 1 && self.train_words % 100_000 == 0 {
-                println!("{}K", self.train_words / 1000);
+                print!("{}K\r", self.train_words / 1000);
+                let _ = io::stdout().flush();
             }
 
             if let Some(&a) = self.vocab_hash.get(&word) {
@@ -559,8 +558,8 @@ impl Word3Vec {
                 last_word_count = word_count;
 
                 if self.options.debug_mode > 1 {
-                    println!(
-                        "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k",
+                    print!(
+                        "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
                         alpha,
                         word_count_actual as real
                             / (self.options.iter as u64 * self.train_words + 1) as real
@@ -568,6 +567,7 @@ impl Word3Vec {
                         word_count_actual as real
                             / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
                     );
+                    let _ = io::stdout().flush();
                 }
                 alpha = self.starting_alpha
                     * (1.0
@@ -601,7 +601,7 @@ impl Word3Vec {
                         let f = self.vocab[word].cn as real;
                         let k = sample * self.train_words as real;
                         let ran = ((f / k).sqrt() + 1.0) * k / f;
-                        next_random = next_random * 25214903917 + 11;
+                        next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
                         if ran < (next_random & 0xFFFF) as real / 65536.0 {
                             continue;
                         }
@@ -634,7 +634,7 @@ impl Word3Vec {
             let word = sen[sentence_position];
             neu1.fill(0.0);
             neu1e.fill(0.0);
-            next_random = next_random * 25214903917 + 11;
+            next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
             let b = next_random as usize % self.options.window;
 
             if self.options.cbow {
@@ -691,7 +691,7 @@ impl Word3Vec {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random = next_random * 25214903917 + 11;
+                                    next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
                                     target = table[(next_random >> 16) % TABLE_SIZE];
                                     if (target == 0) target = next_random % (vocab_size - 1) + 1;
                                     if (target == word) continue;
@@ -780,7 +780,7 @@ impl Word3Vec {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random = next_random * 25214903917 + 11;
+                                    next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
                                     target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
                                     if target == 0 {
                                         target = next_random as usize % (self.vocab.len() - 1) + 1;

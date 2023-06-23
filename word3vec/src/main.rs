@@ -132,7 +132,6 @@ struct Word3Vec {
     vocab: Vec<VocabWord>,
     min_reduce: u64,
     vocab_hash: HashMap<String, usize>,
-    vocab_max_size: usize,
     train_words: u64,
     word_count_actual: AtomicU64,
     file_size: u64,
@@ -234,8 +233,6 @@ fn read_words(fin: File) -> impl Iterator<Item = Result<String, io::Error>> {
 
 impl Word3Vec {
     fn new(options: Options) -> Self {
-        let vocab_max_size = 1000;
-
         let exp_table = (0..EXP_TABLE_SIZE)
             .map(|i| {
                 let e = ((i as real / EXP_TABLE_SIZE as real * 2.0 - 1.0) * MAX_EXP).exp(); // Precompute the exp() table
@@ -245,10 +242,9 @@ impl Word3Vec {
 
         Word3Vec {
             options,
-            vocab: Vec::with_capacity(vocab_max_size),
+            vocab: Vec::with_capacity(1000),
             min_reduce: 1,
             vocab_hash: HashMap::new(),
-            vocab_max_size,
             train_words: 0,
             word_count_actual: AtomicU64::new(0),
             file_size: 0,
@@ -663,50 +659,60 @@ impl Word3Vec {
                     for c in 0..layer1_size {
                         neu1[c] /= cw as real;
                         if self.options.hs {
-                            todo!();
-                            /*
-                            for (d = 0; d < vocab[word].code.len(); d++) {
-                                f = 0;
-                                l2 = vocab[word].point[d] * layer1_size;
+                            let vw = &self.vocab[word];
+                            for d in 0..vw.code.len() {
+                                let l2 = vw.point[d] as usize * layer1_size;
                                 // Propagate hidden -> output
-                                for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-                                if (f <= -MAX_EXP) continue;
-                                else if (f >= MAX_EXP) continue;
-                                else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+                                let f = (0..layer1_size).map(|c| neu1[c] * self.syn1[c + l2].get()).sum::<real>();
+                                if f <= -MAX_EXP || f >= MAX_EXP {
+                                    continue;
+                                }
+                                let f = self.exp_table[((f + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize];
+
                                 // 'g' is the gradient multiplied by the learning rate
-                                g = (1 - vocab[word].code[d] - f) * alpha;
+                                let g = ((1 - vw.code[d]) as real - f) * alpha;
                                 // Propagate errors output -> hidden
-                                for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+                                for c in 0..layer1_size {
+                                    neu1e[c] += g * self.syn1[c + l2].get();
+                                }
                                 // Learn weights hidden -> output
-                                for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
+                                for c in 0..layer1_size {
+                                    self.syn1[c + l2].add(g * neu1[c]);
+                                }
                             }
-                             */
                         }
                         // NEGATIVE SAMPLING
                         if self.options.negative > 0 {
-                            todo!();
-                            /*
-                            for (d = 0; d < negative + 1; d++) {
-                                if (d == 0) {
+                            for d in 0..(self.options.negative  + 1) {
+                                let mut target;
+                                let label;
+                                if d == 0 {
                                     target = word;
                                     label = 1;
                                 } else {
                                     next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
-                                    target = table[(next_random >> 16) % TABLE_SIZE];
-                                    if (target == 0) target = next_random % (vocab_size - 1) + 1;
-                                    if (target == word) continue;
+                                    target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
+                                    if target == 0 {
+                                        target = next_random as usize % (self.vocab.len() - 1) + 1;
+                                    }
+                                    if target == word { continue; }
                                     label = 0;
                                 }
-                                l2 = target * layer1_size;
-                                f = 0;
-                                for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1neg[c + l2];
-                                if (f > MAX_EXP) g = (label - 1) * alpha;
-                                else if (f < -MAX_EXP) g = (label - 0) * alpha;
-                                else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
-                                for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-                                for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+
+                                let l2 = target * layer1_size;
+                                let f = (0..layer1_size).map(|c| neu1[c] * self.syn1neg[c + l2].get()).sum::<real>();
+                                let yh = if f > MAX_EXP {
+                                     1.0
+                                } else if f < -MAX_EXP {
+                                     0.0
+                                } else {
+                                     self.exp_table[((f + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize]
+                                };
+                                let g = (label as real - yh) * alpha;
+
+                                for c in 0..layer1_size { neu1e[c] += g * self.syn1neg[c + l2].get(); }
+                                for c in 0..layer1_size { self.syn1neg[c + l2].add(g * neu1[c]); }
                             }
-                             */
                         }
 
                         // hidden -> in

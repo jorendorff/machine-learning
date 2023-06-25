@@ -396,7 +396,7 @@ impl Word3Vec {
             let mut b = a;
             loop {
                 code.push(binary[b]);
-                point.push(b as u32);
+                point.push((b - vocab_size) as u32);
                 b = parent_node[b];
                 if b == vocab_size * 2 - 2 {
                     break;

@@ -395,8 +395,10 @@ impl Word3Vec {
             let mut point: Vec<u32> = vec![];
             let mut b = a;
             loop {
+                if !code.is_empty() {
+                    point.push((b - vocab_size) as u32);
+                }
                 code.push(binary[b]);
-                point.push((b - vocab_size) as u32);
                 b = parent_node[b];
                 if b == vocab_size * 2 - 2 {
                     break;

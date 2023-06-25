@@ -138,6 +138,7 @@ struct Word3Vec {
     starting_alpha: real,
     /// The learned word-vectors.
     syn0: AlignedBox<[Real]>,
+    /// Weights for hierarchical softmax predictors.
     syn1: AlignedBox<[Real]>,
     syn1neg: AlignedBox<[Real]>,
     exp_table: Vec<real>,

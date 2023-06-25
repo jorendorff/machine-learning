@@ -526,6 +526,17 @@ impl Word3Vec {
         self.create_binary_tree();
     }
 
+    /// Approximate the logistic function, 1 / (1 + e^-x).
+    fn sigmoid(&self, x: real) -> real {
+        if x > MAX_EXP {
+            1.0
+        } else if x < -MAX_EXP {
+            0.0
+        } else {
+            self.exp_table[((x + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize]
+        }
+    }
+
     fn train_model_thread(&self, id: usize) -> Result<()> {
         let window = self.options.window;
 
@@ -667,7 +678,7 @@ impl Word3Vec {
                                 if f <= -MAX_EXP || f >= MAX_EXP {
                                     continue;
                                 }
-                                let f = self.exp_table[((f + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize];
+                                let f = self.sigmoid(f);
 
                                 // 'g' is the gradient multiplied by the learning rate
                                 let g = ((1 - vw.code[d]) as real - f) * alpha;
@@ -701,13 +712,7 @@ impl Word3Vec {
 
                                 let l2 = target * layer1_size;
                                 let f = (0..layer1_size).map(|c| neu1[c] * self.syn1neg[c + l2].get()).sum::<real>();
-                                let yh = if f > MAX_EXP {
-                                     1.0
-                                } else if f < -MAX_EXP {
-                                     0.0
-                                } else {
-                                     self.exp_table[((f + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize]
-                                };
+                                let yh = self.sigmoid(f);
                                 let g = (label as real - yh) * alpha;
 
                                 for c in 0..layer1_size { neu1e[c] += g * self.syn1neg[c + l2].get(); }
@@ -761,9 +766,7 @@ impl Word3Vec {
                                 } else if f >= MAX_EXP {
                                     continue;
                                 }
-                                let f = self.exp_table[((f + MAX_EXP)
-                                    * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0))
-                                    as usize];
+                                let f = self.sigmoid(f);
                                 // 'g' is the gradient multiplied by the learning rate
                                 let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
                                 // Propagate errors output -> hidden
@@ -800,15 +803,7 @@ impl Word3Vec {
                                 let f = (0..layer1_size)
                                     .map(|c| self.syn0[c + l1].get() * self.syn1neg[c + l2].get())
                                     .sum::<real>();
-                                let yh = if f > MAX_EXP {
-                                    1.0
-                                } else if f < -MAX_EXP {
-                                    0.0
-                                } else {
-                                    self.exp_table[((f + MAX_EXP)
-                                        * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0))
-                                        as usize]
-                                };
+                                let yh = self.sigmoid(f);
                                 let g = (label as real - yh) * alpha;
 
                                 for c in 0..layer1_size {

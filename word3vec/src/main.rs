@@ -127,6 +127,20 @@ impl Real {
     }
 }
 
+struct Rng(u64);
+
+impl Rng {
+    fn rand_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_mul(25214903917).wrapping_add(11);
+        self.0
+    }
+
+    /// Get a uniformly distributed random number in `0.0 .. 1.0`.
+    fn rand_real(&mut self) -> real {
+        (self.rand_u64() & 0xFFFF) as real / 65536.0
+    }
+}
+
 struct Word3Vec {
     options: Options,
     vocab: Vec<VocabWord>,
@@ -518,12 +532,11 @@ impl Word3Vec {
                 .expect("Memory allocation failed");
         }
 
-        let mut next_random = 1u64;
+        let mut rng = Rng(1);
         for a in 0..vocab_size {
             for b in 0..layer1_size {
-                next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
                 self.syn0[a * layer1_size + b]
-                    .set((((next_random & 0xFFFF) as real / 65536.0) - 0.5) / layer1_size as real);
+                    .set((rng.rand_real() - 0.5) / layer1_size as real);
             }
         }
         self.create_binary_tree();
@@ -554,7 +567,7 @@ impl Word3Vec {
 
         let layer1_size = self.options.layer1_size;
 
-        let mut next_random = id as u64;
+        let mut rng = Rng(id as u64);
         let mut alpha = self.starting_alpha;
         let mut local_iter = self.options.iter;
         let mut word_count: u64 = 0;
@@ -611,8 +624,7 @@ impl Word3Vec {
                         let f = self.vocab[word].cn as real;
                         let k = sample * self.train_words as real;
                         let ran = ((f / k).sqrt() + 1.0) * k / f;
-                        next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
-                        if ran < (next_random & 0xFFFF) as real / 65536.0 {
+                        if ran < rng.rand_real() {
                             continue;
                         }
                     }
@@ -644,8 +656,7 @@ impl Word3Vec {
             let word = sen[sentence_position];
             neu1.fill(0.0);
             neu1e.fill(0.0);
-            next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
-            let b = next_random as usize % self.options.window;
+            let b = rng.rand_u64() as usize % self.options.window;
 
             if self.options.cbow {
                 //train the cbow architecture
@@ -685,7 +696,7 @@ impl Word3Vec {
                                 }
                                 let f = self.sigmoid(f);
 
-                                // 'g' is the gradient multiplied by the learning rate
+                                // 'g' is the gradient (d/df loss) multiplied by the learning rate
                                 let g = ((1 - vw.code[d]) as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
@@ -706,11 +717,10 @@ impl Word3Vec {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random =
-                                        next_random.wrapping_mul(25214903917).wrapping_add(11);
-                                    target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
+                                    let r = rng.rand_u64();
+                                    target = self.table[(r >> 16) as usize % TABLE_SIZE];
                                     if target == 0 {
-                                        target = next_random as usize % (self.vocab.len() - 1) + 1;
+                                        target = r as usize % (self.vocab.len() - 1) + 1;
                                     }
                                     if target == word {
                                         continue;
@@ -781,7 +791,7 @@ impl Word3Vec {
                                     continue;
                                 }
                                 let f = self.sigmoid(f);
-                                // 'g' is the gradient multiplied by the learning rate
+                                // 'g' is the gradient (d/df loss) multiplied by the learning rate
                                 let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
@@ -803,11 +813,10 @@ impl Word3Vec {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random =
-                                        next_random.wrapping_mul(25214903917).wrapping_add(11);
-                                    target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
+                                    let r = rng.rand_u64();
+                                    target = self.table[(r >> 16) as usize % TABLE_SIZE];
                                     if target == 0 {
-                                        target = next_random as usize % (self.vocab.len() - 1) + 1;
+                                        target = r as usize % (self.vocab.len() - 1) + 1;
                                     }
                                     if target == word {
                                         continue;

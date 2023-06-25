@@ -15,7 +15,6 @@ from torchtext.vocab import build_vocab_from_iterator
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, dropout: float, max_len: int = 5000):
         super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
 
         position = torch.arange(max_len).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
@@ -25,25 +24,26 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x: Tensor) -> Tensor:
-        # x shape: [seq_len, batch_size, embedding_dim]
-        return self.dropout(x + self.pe[:x.size(0)])
+        # x shape: [n, batch_size, embedding_dim]
+        # Note: Throughout, `n` means the sequence length for a single input to the model, in tokens.
+        return x + self.pe[:x.size(0)]
 
 
 class TransformerModel(nn.Module):
     def __init__(self, ntokens: int):
-        dim_embedding = 200  # embedding dimension
+        dim_model = 200  # dimension of embeddings (and residual links, i think)
         dim_feedforward = 200 # dimensions of the feedforward network model in the TransformerEncoder
 
         super().__init__()
         self.ntokens = ntokens
-        self.dim_embedding = dim_embedding
+        self.dim_model = dim_model
 
-        self.embedding = nn.Embedding(ntokens, dim_embedding)
-        self.pos_encoder = PositionalEncoding(dim_embedding, dropout=0.2)
+        self.embedding = nn.Embedding(ntokens, dim_model)
+        self.pos_encoder = PositionalEncoding(dim_model, dropout=0.2)
         encoder_layer = TransformerEncoderLayer(
-            d_model=dim_embedding, nhead=2, dim_feedforward=dim_feedforward, dropout=0.2)
+            d_model=dim_model, nhead=2, dim_feedforward=dim_feedforward, dropout=0.2)
         self.transformer = TransformerEncoder(encoder_layer, num_layers=2)
-        self.linear = nn.Linear(dim_feedforward, ntokens)
+        self.linear = nn.Linear(dim_model, ntokens)
 
         self.embedding.weight.data.uniform_(-0.1, 0.1)
         self.linear.bias.data.zero_()
@@ -51,7 +51,7 @@ class TransformerModel(nn.Module):
 
     def forward(self, src: Tensor, src_mask: Tensor = None) -> Tensor:
         # src shape: [n, k], src_mask shape: [n, n], output shape: [n, k, ntokens]
-        src = self.embedding(src) * math.sqrt(self.dim_embedding)
+        src = self.embedding(src) * math.sqrt(self.dim_model)
         src = self.pos_encoder(src)
         return self.linear(self.transformer(src, src_mask))
 
@@ -65,47 +65,35 @@ tokenizer = get_tokenizer('basic_english')
 vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
 vocab.set_default_index(vocab['<unk>'])
 
-def data_process(raw_text_iter: Iterable[str]) -> Tensor:
-    """Convert iterable of strings (lines of text) into one huge flat Tensor."""
-    data = [torch.tensor(vocab(tokenizer(item)), dtype=torch.long) for item in raw_text_iter]
-    return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
 
-def batchify(data: Tensor, k: int) -> Tensor:
-    # data shape: [N], return shape: [N//k, k]
+def batchify(lines: Iterable[str], k: int) -> Tensor:
+    # tokenize `lines` and concat into one huge flat Tensor
+    data = [torch.tensor(vocab(tokenizer(line)), dtype=torch.long) for line in lines]
+    data = torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
+    # split the data into `k` columns, for parallelism
     seq_len = data.size(0) // k
     data = data[:seq_len * k]
     data = data.view(k, seq_len).t().contiguous()
-    return data.to(DEVICE)
+    return data.to(DEVICE) # shape: [len(data)//k, k]
 
 
-# ``train_iter`` was "consumed" by the process of building the vocab,
-# so we have to create it again
 train_iter, val_iter, test_iter = WikiText2()
-train_data = batchify(data_process(train_iter), 20)  # shape `[seq_len//2, 20]`
-val_data = batchify(data_process(val_iter), 10)
-test_data = batchify(data_process(test_iter), 10)
+train_data = batchify(train_iter, 20)  # shape `[seq_len//20, 20]`
+val_data = batchify(val_iter, 10)
+test_data = batchify(test_iter, 10)
 
 
 bptt = 35
 def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
-    # source shape: [N, k], return shapes: [n, k], [n * k]
-    """
-    Args:
-        source: Tensor, shape ``[full_seq_len, batch_size]``
-        i: int
+    # source shape: [full_seq_size, k]; return shapes: [n, k] and [n * k]
 
-    Returns:
-        tuple (data, target), where data has shape ``[seq_len, batch_size]`` and
-        target has shape ``[seq_len * batch_size]``
-    """
-    seq_len = min(bptt, len(source) - 1 - i)
-    data = source[i:i+seq_len]
-    target = source[i+1:i+1+seq_len].reshape(-1)
+    # why are data and target different shapes? it's inessential - CrossEntropyLoss wants to see a
+    # 1-dimensional array of answers per batch, i guess. so we must flatten both the model output
+    # (`output`, below) and the expected output (`target`, here).
+    n = min(bptt, len(source) - 1 - i)
+    data = source[i:i+n]
+    target = source[i+1:i+1+n].reshape(-1)
     return data, target
-
-
-def make_model(vocab):
-    return 
 
 
 def train_one_epoch(epoch: int, model: nn.Module, criterion: nn.Module, train_data: Tensor, scheduler, optimizer: torch.optim.SGD) -> None:
@@ -152,38 +140,25 @@ def evaluate(model: nn.Module, criterion: nn.Module, eval_data: Tensor) -> float
     return total_loss / (len(eval_data) - 1)
 
 
-def train(model: nn.Module, criterion: nn.Module, train_data: Tensor, val_data: Tensor, scheduler, optimizer: torch.optim.SGD):
-    best_val_loss = float('inf')
-    epochs = 3
-
-    with TemporaryDirectory() as tempdir:
-        best_model_params_path = os.path.join(tempdir, "best_model_params.pt")
-
-        for epoch in range(1, epochs + 1):
-            epoch_start_time = time.time()
-            train_one_epoch(epoch, model, criterion, train_data, scheduler, optimizer)
-            val_loss = evaluate(model, criterion, val_data)
-            val_ppl = math.exp(val_loss)
-            elapsed = time.time() - epoch_start_time
-            print('-' * 89)
-            print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
-                f'eval loss {val_loss:5.2f} | eval perplexity {val_ppl:8.2f}')
-            print('-' * 89)
-
-            if val_loss < best_val_loss:
-                best_val_loss = val_loss
-                torch.save(model.state_dict(), best_model_params_path)
-
-            scheduler.step()
-        model.load_state_dict(torch.load(best_model_params_path))
-
-
 model = TransformerModel(len(vocab)).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
-lr = 5.0  # initial learning rate
-optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+optimizer = torch.optim.SGD(model.parameters(), lr=5.0)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
-train(model, criterion, train_data, val_data, scheduler, optimizer)
+best_val_loss = float('inf')
+
+num_epochs = 3
+for epoch in range(1, num_epochs + 1):
+    epoch_start_time = time.time()
+    train_one_epoch(epoch, model, criterion, train_data, scheduler, optimizer)
+    val_loss = evaluate(model, criterion, val_data)
+    val_ppl = math.exp(val_loss)
+    elapsed = time.time() - epoch_start_time
+    print('-' * 89)
+    print(f'| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | '
+        f'eval loss {val_loss:5.2f} | eval perplexity {val_ppl:8.2f}')
+    print('-' * 89)
+    # torch.save(model.state_dict(), filepath)
+    scheduler.step()
 
 test_loss = evaluate(model, criterion, test_data)
 test_ppl = math.exp(test_loss)

@@ -676,7 +676,9 @@ impl Word3Vec {
                             for d in 0..vw.code.len() {
                                 let l2 = vw.point[d] as usize * layer1_size;
                                 // Propagate hidden -> output
-                                let f = (0..layer1_size).map(|c| neu1[c] * self.syn1[c + l2].get()).sum::<real>();
+                                let f = (0..layer1_size)
+                                    .map(|c| neu1[c] * self.syn1[c + l2].get())
+                                    .sum::<real>();
                                 if f <= -MAX_EXP || f >= MAX_EXP {
                                     continue;
                                 }
@@ -696,29 +698,38 @@ impl Word3Vec {
                         }
                         // NEGATIVE SAMPLING
                         if self.options.negative > 0 {
-                            for d in 0..(self.options.negative  + 1) {
+                            for d in 0..(self.options.negative + 1) {
                                 let mut target;
                                 let label;
                                 if d == 0 {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
+                                    next_random =
+                                        next_random.wrapping_mul(25214903917).wrapping_add(11);
                                     target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
                                     if target == 0 {
                                         target = next_random as usize % (self.vocab.len() - 1) + 1;
                                     }
-                                    if target == word { continue; }
+                                    if target == word {
+                                        continue;
+                                    }
                                     label = 0;
                                 }
 
                                 let l2 = target * layer1_size;
-                                let f = (0..layer1_size).map(|c| neu1[c] * self.syn1neg[c + l2].get()).sum::<real>();
+                                let f = (0..layer1_size)
+                                    .map(|c| neu1[c] * self.syn1neg[c + l2].get())
+                                    .sum::<real>();
                                 let yh = self.sigmoid(f);
                                 let g = (label as real - yh) * alpha;
 
-                                for c in 0..layer1_size { neu1e[c] += g * self.syn1neg[c + l2].get(); }
-                                for c in 0..layer1_size { self.syn1neg[c + l2].add(g * neu1[c]); }
+                                for c in 0..layer1_size {
+                                    neu1e[c] += g * self.syn1neg[c + l2].get();
+                                }
+                                for c in 0..layer1_size {
+                                    self.syn1neg[c + l2].add(g * neu1[c]);
+                                }
                             }
                         }
 
@@ -791,7 +802,8 @@ impl Word3Vec {
                                     target = word;
                                     label = 1;
                                 } else {
-                                    next_random = next_random.wrapping_mul(25214903917).wrapping_add(11);
+                                    next_random =
+                                        next_random.wrapping_mul(25214903917).wrapping_add(11);
                                     target = self.table[(next_random >> 16) as usize % TABLE_SIZE];
                                     if target == 0 {
                                         target = next_random as usize % (self.vocab.len() - 1) + 1;

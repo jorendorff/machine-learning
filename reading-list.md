@@ -54,6 +54,11 @@ transfer learning and see what happens.
 
     About parallelization of training across machines.
 
+-   Mikolov et al. Advances in pre-training distributed word representations. 2017.
+    https://arxiv.org/pdf/1712.09405.pdf
+
+    4-page follow-up to the word2vec paper. I think not super important for me.
+
 -   (the BERT paper) Devlin et al. BERT: Pre-training of deep bidirectional transformers for language understanding. 2018.
     https://arxiv.org/pdf/1810.04805.pdf
 

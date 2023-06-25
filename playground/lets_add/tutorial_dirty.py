@@ -1,6 +1,6 @@
 import math, os
 from tempfile import TemporaryDirectory
-from typing import Tuple
+from typing import Iterable, Tuple
 import time
 
 import torch
@@ -60,37 +60,35 @@ assert torch.cuda.is_available()
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def make_data():
-    train_iter = WikiText2(split='train')
-    tokenizer = get_tokenizer('basic_english')
-    vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
-    vocab.set_default_index(vocab['<unk>'])
+train_iter = WikiText2(split='train')
+tokenizer = get_tokenizer('basic_english')
+vocab = build_vocab_from_iterator(map(tokenizer, train_iter), specials=['<unk>'])
+vocab.set_default_index(vocab['<unk>'])
 
-    def data_process(raw_text_iter: dataset.IterableDataset) -> Tensor:
-        """Convert list of strings (lines of text) into one huge flat Tensor."""
-        data = [torch.tensor(vocab(tokenizer(item)), dtype=torch.long) for item in raw_text_iter]
-        return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
+def data_process(raw_text_iter: Iterable[str]) -> Tensor:
+    """Convert iterable of strings (lines of text) into one huge flat Tensor."""
+    data = [torch.tensor(vocab(tokenizer(item)), dtype=torch.long) for item in raw_text_iter]
+    return torch.cat(tuple(filter(lambda t: t.numel() > 0, data)))
 
-    def batchify(data: Tensor, k: int) -> Tensor:
-        # data shape: [N], return shape: [N//k, k]
-        seq_len = data.size(0) // k
-        data = data[:seq_len * k]
-        data = data.view(k, seq_len).t().contiguous()
-        return data.to(DEVICE)
+def batchify(data: Tensor, k: int) -> Tensor:
+    # data shape: [N], return shape: [N//k, k]
+    seq_len = data.size(0) // k
+    data = data[:seq_len * k]
+    data = data.view(k, seq_len).t().contiguous()
+    return data.to(DEVICE)
 
 
-    # ``train_iter`` was "consumed" by the process of building the vocab,
-    # so we have to create it again
-    train_iter, val_iter, test_iter = WikiText2()
-    train_data = batchify(data_process(train_iter), 20)  # shape `[seq_len//2, 20]`
-    val_data = batchify(data_process(val_iter), 10)
-    test_data = batchify(data_process(test_iter), 10)
-
-    return vocab, train_data, val_data, test_data
+# ``train_iter`` was "consumed" by the process of building the vocab,
+# so we have to create it again
+train_iter, val_iter, test_iter = WikiText2()
+train_data = batchify(data_process(train_iter), 20)  # shape `[seq_len//2, 20]`
+val_data = batchify(data_process(val_iter), 10)
+test_data = batchify(data_process(test_iter), 10)
 
 
 bptt = 35
 def get_batch(source: Tensor, i: int) -> Tuple[Tensor, Tensor]:
+    # source shape: [N, k], return shapes: [n, k], [n * k]
     """
     Args:
         source: Tensor, shape ``[full_seq_len, batch_size]``
@@ -180,7 +178,6 @@ def train(model: nn.Module, criterion: nn.Module, train_data: Tensor, val_data: 
         model.load_state_dict(torch.load(best_model_params_path))
 
 
-vocab, train_data, val_data, test_data = make_data()
 model = TransformerModel(len(vocab)).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
 lr = 5.0  # initial learning rate

@@ -57,6 +57,9 @@ transfer learning and see what happens.
 -   (the BERT paper) Devlin et al. BERT: Pre-training of deep bidirectional transformers for language understanding. 2018.
     https://arxiv.org/pdf/1810.04805.pdf
 
+-   (the AlexNet paper) Krizhevsky et al., 2012. ImageNet classification with deep CNNs.
+    https://proceedings.neurips.cc/paper_files/paper/2012/file/c399862d3b9d6b76c8436e924a68c45b-Paper.pdf
+
 -   Poli et al. Hyena hierarchy: towards larger convolutional language models.
     Stanford research blog post, March 2023.
 

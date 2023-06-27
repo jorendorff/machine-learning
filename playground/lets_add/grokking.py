@@ -133,10 +133,10 @@ class Attention(nn.Module):
     def __init__(self, d_model, num_heads, d_head, n_ctx, model):
         super().__init__()
         self.model = model
-        self.W_K = nn.Parameter(torch.randn(num_heads, d_head, d_model)/np.sqrt(d_model))
-        self.W_Q = nn.Parameter(torch.randn(num_heads, d_head, d_model)/np.sqrt(d_model))
-        self.W_V = nn.Parameter(torch.randn(num_heads, d_head, d_model)/np.sqrt(d_model))
-        self.W_O = nn.Parameter(torch.randn(num_heads, d_model, d_head)/np.sqrt(d_model))
+        self.W_K = nn.Parameter(torch.randn(num_heads, d_head, d_model) / np.sqrt(d_model))
+        self.W_Q = nn.Parameter(torch.randn(num_heads, d_head, d_model) / np.sqrt(d_model))
+        self.W_V = nn.Parameter(torch.randn(num_heads, d_head, d_model) / np.sqrt(d_model))
+        self.W_O = nn.Parameter(torch.randn(num_heads, d_model, d_head) / np.sqrt(d_model))
         self.register_buffer('mask', torch.tril(torch.ones((n_ctx, n_ctx))))
         self.d_head = d_head
         self.hook_k = HookPoint()
@@ -148,19 +148,34 @@ class Attention(nn.Module):
         self.hook_result = HookPoint()
 
     def forward(self, x):
-        # x: [B, P, D]
-        # W_K, W_Q, W_V: [I, H, D] (I=number of attention heads?)
+        # x: [B, P, D] (B=batch size, P=example length, D=dimension of model)
+        # W_K, W_Q, W_V: [I, H, D] (I=number of attention heads, H=output dimension of each head)
+        #
+        # For each attention head, there's a single HxD linear combination that's applied to every token
+        # of the input. Each token is size D. The output is size H. This is done for W_K, W_Q, and W_V.
+        # The result is, for each example, for each attention head, for each token, a vector of size H.
         k = self.hook_k(torch.einsum('ihd,bpd->biph', self.W_K, x))
         q = self.hook_q(torch.einsum('ihd,bpd->biph', self.W_Q, x))
         v = self.hook_v(torch.einsum('ihd,bpd->biph', self.W_V, x))
-        attn_scores_pre = torch.einsum('biph,biqh->biqp', k, q)
-        attn_scores_masked = torch.tril(attn_scores_pre) - 1e10 * (1 - self.mask[:x.shape[-2], :x.shape[-2]])
-        attn_matrix = self.hook_attn(F.softmax(self.hook_attn_pre(attn_scores_masked/np.sqrt(self.d_head)), dim=-1))
-        z = self.hook_z(torch.einsum('biph,biqp->biqh', v, attn_matrix))
-        result = self.hook_result(torch.einsum('idh,biqh->biqd', self.W_O, z))
+        # Dot every key (B*I*P keys of size H) with the corresponding query (B*I*P queries of size H).
+        # Result, for each example, for each attention head, is a PxP matrix of non-normalized cosine similarities.
+        attn_scores_pre = torch.einsum('biph,biqh->biqp', k, q) # [B, I, P, P]
+        # Replace everything above the q-p diagonal with -1e10. The triangle is visible when looking at
+        # the last two dimensions; tril simply does the same to every such PxP square slice.
+        attn_scores_masked = torch.tril(attn_scores_pre) - 1e10 * (1 - self.mask[:x.shape[-2], :x.shape[-2]])  # still [B, I, P, P]
+        # Adjust for the contribution of H to variance, then apply softmax. Fine.
+        # Now each row of each PxP square adds up to 1 and all elements are non-negative.
+        attn_matrix = self.hook_attn(F.softmax(self.hook_attn_pre(attn_scores_masked / np.sqrt(self.d_head)), dim=-1))  # still [B, I, P, P]
+        # For each batch, for each attention head, for each token, linearly combine the values
+        # `v` using the weights in the `attn_matrix`.
+        z = self.hook_z(torch.einsum('biph,biqp->biqh', v, attn_matrix))  # [B, I, P, H]
+        # Lastly, each attention head has its own matrix to re-expand from H-vectors to D-vectors...
+        result = self.hook_result(torch.einsum('idh,biqh->biqd', self.W_O, z)) # [B, I, P, H]
+        # and then results from all attention heads are just added together to make the output.
+        # It is wild that this mumbo jumbo produces anything useful at all.
         out = einops.reduce(result,
                              'batch index position model->batch position model',
-                             'sum')
+                             'sum')  # [B, P, D]
         return out
 
 
@@ -169,9 +184,9 @@ class MLP(nn.Module):
     def __init__(self, d_model, d_mlp, act_type, model):
         super().__init__()
         self.model = model
-        self.W_in = nn.Parameter(torch.randn(d_mlp, d_model)/np.sqrt(d_model))
+        self.W_in = nn.Parameter(torch.randn(d_mlp, d_model) / np.sqrt(d_model))
         self.b_in = nn.Parameter(torch.zeros(d_mlp))
-        self.W_out = nn.Parameter(torch.randn(d_model, d_mlp)/np.sqrt(d_model))
+        self.W_out = nn.Parameter(torch.randn(d_model, d_mlp) / np.sqrt(d_model))
         self.b_out = nn.Parameter(torch.zeros(d_model))
         self.act_type = act_type
         # self.ln = LayerNorm(d_mlp, model=self.model)
@@ -313,7 +328,7 @@ d_vocab = 12
 d_vocab_out = 10
 d_model = 512 #@param
 num_heads = 4
-d_head = d_model//num_heads
+d_head = d_model // num_heads
 d_mlp = 4 * d_model
 seed = 129000 #@param
 #@markdown Data
@@ -379,9 +394,9 @@ fourier_basis.append(torch.cos(np.pi*torch.arange(10)))
 fourier_basis_names.append(f'+-1')
 
 fourier_basis = torch.stack(fourier_basis, axis=0).cuda()
-fourier_basis = fourier_basis/einops.reduce(fourier_basis.pow(2),
-                                            'vocab fourier -> vocab 1',
-                                            'sum').sqrt()
+fourier_basis = fourier_basis / einops.reduce(fourier_basis.pow(2),
+                                              'vocab fourier -> vocab 1',
+                                              'sum').sqrt()
 #imshow_div(fourier_basis)
 #imshow_div(fourier_basis @ fourier_basis.T)
 
@@ -431,7 +446,7 @@ optimizer = optim.AdamW(model.parameters(),
                         lr=lr,
                         weight_decay=weight_decay,
                         betas=(0.9, 0.98))
-scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda step: min(step/10, 1))
+scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda step: min(step / 10, 1))
 
 
 

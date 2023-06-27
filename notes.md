@@ -3536,6 +3536,75 @@ That model trained on 783M words, using a single CPU (in 2013, which seems like
 a weird flex), taking about three days.
 
 
+### Nair & Hinton. Rectified Linear Units Improve Restricted Boltzmann Machines. 2010.
+
+https://icml.cc/Conferences/2010/papers/432.pdf
+
+Jim wrote:
+
+> Okay, so I asked a professor friend of mine what changed since the '90s. His answers:
+>
+> 1. We got a good activation function.
+> 2. We got better at choosing values for hyperparameters.
+> 3. We figured out how to do memory. Recurrent networks and things like that.
+
+So, regarding #1, I looked up this paper, which is the one usually cited for ReLU.
+
+I read somewhere that ReLU was known by a select few before this paper, but it
+flew under the radar until Nair & Hinton broke the story. Unbelievably this
+didn't happen until 2010.
+
+"Restricted Boltzmann Machines" can be taken as a synonym for "layers of
+perceptrons", the basic building block of modern neural nets.
+
+Until this time the standard practice was to use sigmoid activation functions,
+and I gather the intuition was, a biological neuron basically either "fires" or
+it doesn't, we want these intermediate values to be feature detectors and a
+feature is either there in the input or it's not, a binary result.
+
+ReLU is not a sigmoid.
+
+The intuition presented in this paper's abstract is that it would be nice to
+have separate feature detectors for "a line" and "a really bright line" — or
+maybe an infinite continuum of feature detectors — and guess what, we can just
+_not_ use a sigmoid, i.e. don't truncate the signal to 1 when it's strong, and
+then a single neuron gives an output that's simply the intensity of the feature
+being detected!
+
+A second explanation offered is this: Suppose you have an image processing net.
+You run the network once on an image, then bump up the contrast on the image
+and run it again. What would do you want to see? With sigmoid, it's hard to say
+what will happen because the response is so nonlinear. With ReLU, the output
+simply scales with the intensity of the pixels in the image (at least, for
+features that are active).
+
+I'm not sure either is the real reason ReLU is so much better! An alternative
+explanation I've heard is that the sigmoid function gets really flat at both
+sides. Training depends on gradients, and when a neuron is producing output in
+either of those flat regions, it has an extremely low gradient. So a neuron
+that isn't useful because its output is always 0 or always 1 won't train its
+way toward something useful — it'll tend to stay useless forever. ReLU is only
+flat on one side.
+
+This paper was not an easy read. Things have changed. The field now generally
+seems more interested in trying a bunch of stuff to see what works (which makes
+for easy-to-read papers); back in 2010, there was more theory and that means
+statistics (not my strong suit).
+
+As for the significance of ReLU: I think this might be the biggest single
+breakthrough between 2003 and the present.
+
+Consider: LeNet was a huge breakthrough in computer vision, published in 1998.
+It processed 28x28 monochrome images.
+
+There was presumably steady progress in computer vision, but the architecture
+of AlexNet, published 14 years later, was not all that different. The main
+differences were (1) AlexNet was deeper, a change made possible by using GPUs
+to train it; (2) the sigmoid activation function used in LeNet was replaced
+with ReLU.
+
+
+
 ## Random musings
 
 My new favorite ML paper is

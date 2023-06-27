@@ -3338,7 +3338,12 @@ I'm surprised the gains were not more impressive!
 
 https://arxiv.org/abs/2301.05217
 
-I'm unable to tell what the network is. Where is the code?
+Reached via https://www.alignmentforum.org/posts/N6WM6hs7RQMKDhYjB/a-mechanistic-interpretability-analysis-of-grokking
+via https://twitter.com/NeelNanda5/status/1559060507524403200
+via https://twitter.com/robertskmiles/status/1663534255249453056
+
+I'm unable to tell what the network is. Where is the code? (Found it
+[here](https://github.com/mechanistic-interpretability-grokking/progress-measures-paper/blob/main/Non_Modular_Addition_Grokking_Tasks%20(1).ipynb).)
 
 But they cite another paper
 https://transformer-circuits.pub/2021/framework/index.html that explains many

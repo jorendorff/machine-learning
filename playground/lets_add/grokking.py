@@ -81,11 +81,8 @@ class Embed(nn.Module):
 
     def forward(self, x):
         # x: [B, P] (B=batch size, P=example length)
-        # W_E[x]: [D, B, P]
+        # W_E[:, x]: [D, B, P]
         # out: [B, P, D]
-        print("DEBUG- x.shape:", x.shape)
-        print("DEBUG- W_E.shape:", self.W_E.shape)
-        print(x)
         return torch.einsum('dbp -> bpd', self.W_E[:, x])
 
 
@@ -291,38 +288,11 @@ class Transformer(nn.Module):
                 hp.add_hook(save_hook_back, 'bwd')
 
 
-# === Training Details
-# Architecture
-
-# It's a 1 layer transformer, with no layer norm and learned positional embeddings.
-# , , , . Input format is x|y|=, (integers from to and
-#
-# ).
-#
-# It was trained with full batch training, with 0.3 of the total data as training data. It is trained with AdamW, with
-# and very high weight decay (
-#
-# ) - I speculate that weight decay and possibly using Adam at all is pretty important for getting grokking to work.
-#
-# Aside: Why a transformer? A 1L MLP with ReLU activations can do modular addition, with no equals sign, and the sum of the embeddings of
-# and
-#
-# . This would also be a pretty reasonable thing to analyse! I realised this pretty late into this research, and wanted an excuse to use the transformer circuits equations, so stuck with a 1L transformer. Using a 1L MLP for future research into grokking seems pretty reasonable.
-#
-# Aside 2: Even given that it's a transformer, why have an equals sign token? Mostly because I wanted the model to be able to learn commutativity - if the inputs were just x|y then the residual stream + QK circuit inherently distinguish between
-# and
-#
-# . This isn't a super important choice, though I do think it makes the analysis a bit nicer.
-
-
 # === 5 Digit Addition
-
-train_model = True #@param
-
 
 # --- Setup
 
-#@markdown Model
+# Model
 num_layers = 1
 d_vocab = 12
 d_vocab_out = 10
@@ -331,19 +301,21 @@ num_heads = 4
 d_head = d_model // num_heads
 d_mlp = 4 * d_model
 seed = 129000 #@param
-#@markdown Data
+
+# Data
 num_digits =  5#@param
 n_ctx = 3*num_digits + 3
 act_type = 'ReLU'
 batch_size = 64 #@param
-is_finite = True #@param
+is_finite = False #@param
 num_data = 750 #@param
-#@markdown Optimizer
+
+# Optimizer
 lr = 1e-4 #@param
 weight_decay = 0.1 #@param
 num_epochs = 3000 #@param
 
-#@markdown Misc
+# Misc
 checkpoint_models = False #@param
 checkpoint_every = 50 #@param
 
@@ -378,27 +350,6 @@ def string_to_tokens(string, batch=False):
         return torch.tensor(tokens)[None, :]
     else:
         return torch.tensor(tokens)
-
-
-fourier_basis = []
-fourier_basis_names = []
-fourier_basis.append(torch.ones(10))
-fourier_basis_names.append(f'const')
-
-for i in range(1, 5):
-    fourier_basis.append(torch.cos(2*np.pi/10*i*torch.arange(10)))
-    fourier_basis_names.append(f'cos {i}')
-    fourier_basis.append(torch.sin(2*np.pi/10*i*torch.arange(10)))
-    fourier_basis_names.append(f'sin {i}')
-fourier_basis.append(torch.cos(np.pi*torch.arange(10)))
-fourier_basis_names.append(f'+-1')
-
-fourier_basis = torch.stack(fourier_basis, axis=0).cuda()
-fourier_basis = fourier_basis / einops.reduce(fourier_basis.pow(2),
-                                              'vocab fourier -> vocab 1',
-                                              'sum').sqrt()
-#imshow_div(fourier_basis)
-#imshow_div(fourier_basis @ fourier_basis.T)
 
 
 def data_generator(batch_size, num_digits, seed):
@@ -449,7 +400,6 @@ optimizer = optim.AdamW(model.parameters(),
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda step: min(step / 10, 1))
 
 
-
 def get_pred_log_probs(logits, tokens):
     trunc_logits = logits[:, -(num_digits+2):-1]
     ans_tokens = tokens[:, -(num_digits+1):]
@@ -457,16 +407,18 @@ def get_pred_log_probs(logits, tokens):
     pred_log_probs = torch.gather(log_probs, -1, ans_tokens[:, :, None])[..., 0]
     return pred_log_probs
 
+
 def loss_fn(logits, tokens):
     return -get_pred_log_probs(logits, tokens).mean()
+
+
+import torchinfo
+torchinfo.summary(model, input_data = train_tokens)
 
 
 # --- Training
 
 if is_finite:
-    import torchinfo
-    torchinfo.summary(model, input_data = train_tokens)
-
     train_losses = []
     ptl_train_list = []
     test_losses = []
@@ -495,16 +447,7 @@ if is_finite:
         optimizer.zero_grad()
         if epoch % 100 == 0:
             print(epoch, train_loss.item(), test_loss.item())
-        # if epoch % 1000 == 0 and epoch > 0:
-        #     lines([train_losses, test_losses], labels=['train', 'test'])
-        #     lines([[ptl_train_list[j][i] for j in range(len(ptl_train_list))] for i in range(1+num_digits)]+[train_losses]+[[ptl_test_list[j][i] for j in range(len(ptl_train_list))] for i in range(1+num_digits)]+[test_losses],
-        #     labels = [f'tok train {i}' for i in range(1+num_digits)]+['train_loss']+[f'tok test {i}' for i in range(1+num_digits)]+['test_loss'],
-        #     title='Per-digit Loss Curves for 5 digit addition (Finite Data)',
-        #     xaxis='Step',
-        #     yaxis='Loss')
-
-
-if not is_finite and train_model:
+else:
     train_losses = []
     per_token_losses_list = []
     sds=[]
@@ -527,59 +470,21 @@ if not is_finite and train_model:
             if (epoch+1) % (checkpoint_every) == 0:
                 sds.append(model.state_dict())
                 epochs.append(epoch+1)
-        # if (epoch+1) % 2000 == 0:
-    line(train_losses)
 
 
-line(train_losses)
-per_token_losses = np.stack(per_token_losses_list, axis=0)
-lines([per_token_losses[:, i] for i in range(1+num_digits)]+[train_losses],
-      labels = [f'tok {i}' for i in range(1+num_digits)]+['train_loss'],
-      title='Per-digit Loss Curves for 5 digit addition (Infinite Data)',
-      xaxis='Step',
-      yaxis='Loss')
-
-lines([per_token_losses[:, i] for i in range(1+num_digits)]+[train_losses],
-      labels = [f'tok {i}' for i in range(1+num_digits)]+['train_loss'], log_y=True)
-
-
-line(train_losses)
-per_token_losses = np.stack(per_token_losses_list, axis=0)
-lines([per_token_losses[:, i] for i in range(1+num_digits)]+[train_losses],
-      labels = [f'tok {i}' for i in range(1+num_digits)]+['train_loss'])
-
-lines([per_token_losses[:, i] for i in range(1+num_digits)]+[train_losses],
-      labels = [f'tok {i}' for i in range(1+num_digits)]+['train_loss'], log_y=True)
-
-
-if is_finite:
-    train_losses = []
-    test_losses = []
-    # losses_forced = []
-    epochs = []
-    for epoch in tqdm.tqdm(range(num_epochs)):
-        logits = model(train_tokens)
-        train_ptl = get_pred_lps(logits, train_mask)
-        train_ptls.append(to_numpy(train_ptl))
-        train_loss = train_ptl.mean()
-        train_loss.backward()
-        optimizer.step()
-        scheduler.step()
-        optimizer.zero_grad()
-        train_losses.append(train_loss.item())
-
-        test_tokens, test_mask = next(test_ds)
-        test_logits = model(test_tokens)
-        test_pred_lps = get_pred_lps(test_logits, test_mask)
-        test_ptl = [test_pred_lps[test_mask==i].mean().item() for i in range(rand_size)]
-        test_ptls.append(test_ptl)
-        test_loss = test_pred_lps.mean()
-        test_losses.append(test_loss.item())
-
-        if epoch % 100 == 0:
-            print(epoch, train_losses[-1], test_losses[-1])
-        if (epoch % 1000 == 0) and epoch>0:
-            lines([train_losses, test_losses], labels=['train', 'test'], log_y=True)
-        if epoch%5 == 0:
-            epochs.append(epoch)
-            sds.append(copy.deepcopy(model.state_dict()))
+# here, try some examples to see it working
+TOKENS='0123456789+='
+assert TOKENS[PLUS_INDEX] == '+'
+assert TOKENS[EQUALS_INDEX] == '='
+while True:
+    line = input("> ")
+    line = line.replace(' ', '')
+    if len(line) != 12 or not all(c in TOKENS for c in line):
+        print("couldn't parse -- type something like:   12345 + 54459 =")
+        continue
+    tokens = [TOKENS.index(c) for c in line]
+    while len(tokens) < 18:
+        logits = model(torch.tensor([tokens]).to('cuda'))[0]
+        prediction = logits.argmax(dim=-1)
+        tokens.append(prediction[len(tokens) - 1])
+    print(''.join(TOKENS[i] for i in tokens))

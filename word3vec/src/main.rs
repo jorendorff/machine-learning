@@ -179,7 +179,7 @@ fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
     let mut word = vec![];
     loop {
         let b = match read_byte(fin) {
-            None => break,
+            None => return Ok(None),
             Some(result) => result.context("error reading a word")?,
         };
 
@@ -188,8 +188,8 @@ fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
         }
         if b == b' ' || b == b'\t' || b == b'\n' {
             if !word.is_empty() {
-                // TODO: PUT THE DAMN THING BACK
-                break;
+                // Note: The original C code puts the whitespace character back.
+                return Ok(Some(String::from_utf8_lossy(&word).to_string()));
             }
             if b == b'\n' {
                 return Ok(Some("</s>".to_string()));
@@ -201,11 +201,6 @@ fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
             word.push(b); // Truncate too long words
         }
     }
-    Ok(if word.is_empty() {
-        None
-    } else {
-        Some(String::from_utf8_lossy(&word).to_string())
-    })
 }
 
 // Read words from a file, assuming space + tab + EOL to be word boundaries
@@ -224,7 +219,7 @@ fn read_words(fin: File) -> impl Iterator<Item = Result<String, io::Error>> {
             }
             if ch == b' ' || ch == b'\t' || ch == b'\n' {
                 if !word.is_empty() {
-                    break;
+                    return Some(Ok(String::from_utf8_lossy(&word).to_string()));
                 }
                 bytes.next();
                 if ch == b'\n' {
@@ -238,11 +233,7 @@ fn read_words(fin: File) -> impl Iterator<Item = Result<String, io::Error>> {
                 word.push(ch); // Truncate too long words
             }
         }
-        if word.is_empty() {
-            None
-        } else {
-            Some(Ok(String::from_utf8_lossy(&word).to_string()))
-        }
+        None
     })
 }
 
@@ -250,7 +241,9 @@ impl Word3Vec {
     fn new(options: Options) -> Self {
         let exp_table = (0..EXP_TABLE_SIZE)
             .map(|i| {
-                let e = ((i as real / EXP_TABLE_SIZE as real * 2.0 - 1.0) * MAX_EXP).exp(); // Precompute the exp() table
+                // Casts in strange places to match the original exactly.
+                let j = (i as real / EXP_TABLE_SIZE as real * 2.0 - 1.0) * MAX_EXP;
+                let e = (j as f64).exp() as f32; // Precompute the exp() table
                 e / (e + 1.0) // Precompute f(x) = x / (x + 1)
             })
             .collect();
@@ -549,7 +542,7 @@ impl Word3Vec {
         } else if x < -MAX_EXP {
             0.0
         } else {
-            self.exp_table[((x + MAX_EXP) * (EXP_TABLE_SIZE as real / MAX_EXP / 2.0)) as usize]
+            self.exp_table[((x + MAX_EXP) * ((EXP_TABLE_SIZE / MAX_EXP as usize / 2) as real)) as usize]
         }
     }
 
@@ -910,8 +903,8 @@ impl Word3Vec {
                         for f in word_vec {
                             write!(fo, "{} ", f.get()).context("error writing output file")?;
                         }
-                        writeln!(fo).context("error writing output file")?;
                     }
+                    writeln!(fo).context("error writing output file")?;
                 }
             }
             Some(classes) => {

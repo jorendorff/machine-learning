@@ -17,9 +17,6 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <assert.h>
 
 #define MAX_STRING 100
 #define EXP_TABLE_SIZE 1000
@@ -51,25 +48,6 @@ clock_t start;
 int hs = 0, negative = 5;
 const int table_size = 1e8;
 int *table;
-
-// uint32_t RealToBits(real x) {
-//   union q {
-//     real r;
-//     uint32_t u;
-//   } qval;
-//
-//   qval.r = x;
-//   return qval.u;
-// }
-//
-// void PrintRealArray(real *arr, int len) {
-//   printf("[");
-//   for (int b = 0; b < len; b++) {
-//     if (b) printf(", ");
-//     printf("%08" PRIx32, RealToBits(arr[b]));
-//   }
-//   printf("]\n");
-// }
 
 void InitUnigramTable() {
   int a, i;
@@ -537,13 +515,7 @@ void *TrainModelThread(void *id) {
           // Propagate errors output -> hidden
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
           // Learn weights hidden -> output
-          for (c = 0; c < layer1_size; c++) {
-            float a = syn1[c + l2];
-            float x = g * syn0[c + l1];
-            printf("%g %g %g\n", a, x, a + x);
-            syn1[c + l2] += g * syn0[c + l1];
-            assert(syn1[c + l2] == a + x);
-          }
+          for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
         }
         // NEGATIVE SAMPLING
         if (negative > 0) for (d = 0; d < negative + 1; d++) {
@@ -575,8 +547,6 @@ void *TrainModelThread(void *id) {
       sentence_length = 0;
       continue;
     }
-
-    break;  // FIXME - exiting loop early for debugging only
   }
   fclose(fi);
   free(neu1);

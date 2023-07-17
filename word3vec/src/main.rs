@@ -438,8 +438,8 @@ impl Word3Vec {
         for word in read_words(fin) {
             let word = word.context("error reading training data file")?;
             self.train_words += 1;
-            if self.options.debug_mode > 1 && self.train_words % 100_000 == 0 {
-                print!("{}K\r", self.train_words / 1000);
+            if self.options.debug_mode > 1 && self.train_words % 1_000_000 == 0 {
+                print!("{}M\r", self.train_words / 1_000_000);
                 let _ = io::stdout().flush();
             }
 
@@ -849,7 +849,7 @@ impl Word3Vec {
     }
 
     fn train_model(&mut self) -> Result<()> {
-        println!("Starting training using file {:?}", self.options.train_file);
+        println!("Starting training using file {}", self.options.train_file.display());
 
         self.starting_alpha =
             self.options

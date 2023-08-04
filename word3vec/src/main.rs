@@ -162,9 +162,9 @@ struct Word3Vec {
     file_size: u64,
     starting_alpha: real,
     /// The learned word-vectors.
-    syn0: AlignedBox<[Real]>,
+    embeddings: AlignedBox<[Real]>,
     /// Weights for hierarchical softmax predictors.
-    syn1: AlignedBox<[Real]>,
+    weights: AlignedBox<[Real]>,
     syn1neg: AlignedBox<[Real]>,
     exp_table: Vec<real>,
     start: Instant,
@@ -278,8 +278,8 @@ impl Word3Vec {
             word_count_actual: AtomicU64::new(0),
             file_size: 0,
             starting_alpha: 0.0,
-            syn0: AlignedBox::slice_from_default(128, 128).unwrap(),
-            syn1: AlignedBox::slice_from_default(128, 128).unwrap(),
+            embeddings: AlignedBox::slice_from_default(128, 128).unwrap(),
+            weights: AlignedBox::slice_from_default(128, 128).unwrap(),
             syn1neg: AlignedBox::slice_from_default(128, 128).unwrap(),
             exp_table,
             start: Instant::now(),
@@ -535,10 +535,10 @@ impl Word3Vec {
         let vocab_size = self.vocab.len();
         let layer1_size = self.options.layer1_size;
 
-        self.syn0 = AlignedBox::slice_from_default(128, vocab_size * layer1_size)
+        self.embeddings = AlignedBox::slice_from_default(128, vocab_size * layer1_size)
             .expect("Memory allocation failed");
         if self.options.hs {
-            self.syn1 = AlignedBox::slice_from_default(128, (vocab_size - 1) * layer1_size)
+            self.weights = AlignedBox::slice_from_default(128, (vocab_size - 1) * layer1_size)
                 .expect("Memory allocation failed");
         }
         if self.options.negative > 0 {
@@ -549,7 +549,7 @@ impl Word3Vec {
         let mut rng = Rng(1);
         for a in 0..vocab_size {
             for b in 0..layer1_size {
-                self.syn0[a * layer1_size + b]
+                self.embeddings[a * layer1_size + b]
                     .set((rng.rand_real() - 0.5) / layer1_size as real);
             }
         }
@@ -678,7 +678,7 @@ impl Word3Vec {
                         let last_word = sen[c];
 
                         for c in 0..layer1_size {
-                            neu1[c] += self.syn0[c + last_word * layer1_size].get();
+                            neu1[c] += self.embeddings[c + last_word * layer1_size].get();
                         }
                         cw += 1;
                     }
@@ -693,7 +693,7 @@ impl Word3Vec {
                                 let l2 = vw.point[d] as usize * layer1_size;
                                 // Propagate hidden -> output
                                 let f = (0..layer1_size)
-                                    .map(|c| neu1[c] * self.syn1[c + l2].get())
+                                    .map(|c| neu1[c] * self.weights[c + l2].get())
                                     .sum::<real>();
                                 if f <= -MAX_EXP || f >= MAX_EXP {
                                     continue;
@@ -704,11 +704,11 @@ impl Word3Vec {
                                 let g = ((1 - vw.code[d]) as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
-                                    neu1e[c] += g * self.syn1[c + l2].get();
+                                    neu1e[c] += g * self.weights[c + l2].get();
                                 }
                                 // Learn weights hidden -> output
                                 for c in 0..layer1_size {
-                                    self.syn1[c + l2].add(g * neu1[c]);
+                                    self.weights[c + l2].add(g * neu1[c]);
                                 }
                             }
                         }
@@ -761,7 +761,7 @@ impl Word3Vec {
                                 let last_word = sen[c];
 
                                 for c in 0..layer1_size {
-                                    self.syn0[c + last_word * layer1_size].add(neu1e[c]);
+                                    self.embeddings[c + last_word * layer1_size].add(neu1e[c]);
                                 }
                             }
                         }
@@ -787,7 +787,9 @@ impl Word3Vec {
                                 // Propagate hidden -> output
                                 let l2 = self.vocab[word].point[d] as usize * layer1_size;
                                 let f = (0..layer1_size)
-                                    .map(|c| self.syn0[l1 + c].get() * self.syn1[l2 + c].get())
+                                    .map(|c| {
+                                        self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
+                                    })
                                     .sum::<real>();
                                 if f <= -MAX_EXP {
                                     continue;
@@ -799,11 +801,11 @@ impl Word3Vec {
                                 let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
-                                    neu1e[c] += g * self.syn1[c + l2].get();
+                                    neu1e[c] += g * self.weights[c + l2].get();
                                 }
                                 // Learn weights hidden -> output
                                 for c in 0..layer1_size {
-                                    self.syn1[c + l2].add(g * self.syn0[c + l1].get());
+                                    self.weights[c + l2].add(g * self.embeddings[c + l1].get());
                                 }
                             }
                         }
@@ -829,7 +831,9 @@ impl Word3Vec {
                                 }
                                 let l2 = target * layer1_size;
                                 let f = (0..layer1_size)
-                                    .map(|c| self.syn0[c + l1].get() * self.syn1neg[c + l2].get())
+                                    .map(|c| {
+                                        self.embeddings[c + l1].get() * self.syn1neg[c + l2].get()
+                                    })
                                     .sum::<real>();
                                 let yh = self.sigmoid(f);
                                 let g = (label as real - yh) * alpha;
@@ -838,14 +842,14 @@ impl Word3Vec {
                                     neu1e[c] += g * self.syn1neg[c + l2].get();
                                 }
                                 for c in 0..layer1_size {
-                                    self.syn1neg[c + l2].add(g * self.syn0[c + l1].get());
+                                    self.syn1neg[c + l2].add(g * self.embeddings[c + l1].get());
                                 }
                             }
                         }
 
                         // Learn weights input -> hidden
                         for c in 0..layer1_size {
-                            self.syn0[c + l1].add(neu1e[c]);
+                            self.embeddings[c + l1].add(neu1e[c]);
                         }
                     }
                 }
@@ -934,14 +938,14 @@ impl Word3Vec {
                         sample: self.options.sample,
                         window: self.options.window,
                         vocab: self.vocab.clone(),
-                        embeddings: self.syn0.iter().map(Real::get).collect::<Vec<real>>(),
-                        weights: self.syn1.iter().map(Real::get).collect::<Vec<real>>(),
+                        embeddings: self.embeddings.iter().map(Real::get).collect::<Vec<real>>(),
+                        weights: self.weights.iter().map(Real::get).collect::<Vec<real>>(),
                     })?;
                 } else {
                     writeln!(fo, "{} {}", vocab_size, layer1_size)?;
                     for (a, vw) in self.vocab.iter().enumerate() {
                         write!(fo, "{} ", vw.word).context("error writing output file")?;
-                        let word_vec = &self.syn0[a * layer1_size..][..layer1_size];
+                        let word_vec = &self.embeddings[a * layer1_size..][..layer1_size];
                         if self.options.binary {
                             let word_vec = word_vec.iter().map(Real::get).collect::<Vec<real>>();
                             fo.write_all(bytemuck::cast_slice::<real, u8>(&word_vec))
@@ -970,7 +974,8 @@ impl Word3Vec {
                     // Set cent[c] = sum of vectors in class c, centcn[c] = number of vectors in class c + 1
                     for c in 0..vocab_size {
                         for d in 0..layer1_size {
-                            cent[layer1_size * cl[c] + d] += self.syn0[c * layer1_size + d].get();
+                            cent[layer1_size * cl[c] + d] +=
+                                self.embeddings[c * layer1_size + d].get();
                         }
                         centcn[cl[c]] += 1;
                     }
@@ -997,7 +1002,8 @@ impl Word3Vec {
                         for d in 0..clcn {
                             let x = (0..layer1_size)
                                 .map(|b| {
-                                    cent[layer1_size * d + b] * self.syn0[c * layer1_size + b].get()
+                                    cent[layer1_size * d + b]
+                                        * self.embeddings[c * layer1_size + b].get()
                                 })
                                 .sum::<real>();
                             if x > closev {

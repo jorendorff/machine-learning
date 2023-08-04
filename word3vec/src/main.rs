@@ -563,7 +563,8 @@ impl Word3Vec {
         } else if x < -MAX_EXP {
             0.0
         } else {
-            self.exp_table[((x + MAX_EXP) * ((EXP_TABLE_SIZE / MAX_EXP as usize / 2) as real)) as usize]
+            self.exp_table
+                [((x + MAX_EXP) * ((EXP_TABLE_SIZE / MAX_EXP as usize / 2) as real)) as usize]
         }
     }
 

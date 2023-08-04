@@ -898,6 +898,7 @@ impl Word3Vec {
         Ok((sen, false))
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn train_model_thread_simplified(&self, id: usize) -> Result<()> {
         let window = self.options.window;
 
@@ -1025,6 +1026,7 @@ impl Word3Vec {
         Ok(())
     }
 
+    #[allow(clippy::needless_range_loop)]
     fn train_model(&mut self) -> Result<()> {
         println!(
             "Starting training using file {}",

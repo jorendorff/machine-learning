@@ -907,8 +907,7 @@ impl Word3Vec {
     fn train_model_thread_simplified(&self, id: usize) -> Result<()> {
         let window = self.options.window;
 
-        let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
-        let mut neu1e: Vec<real> = vec![0.0; self.options.layer1_size];
+        let mut emb_adjust: Vec<real> = vec![0.0; self.options.layer1_size];
 
         let mut fi = BufReader::new(File::open(&self.options.train_file)?);
         fi.seek(SeekFrom::Start(
@@ -923,7 +922,6 @@ impl Word3Vec {
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
-        let mut sentence_position: usize = 0;
 
         for _epoch in 0..self.options.iter {
             loop {
@@ -952,72 +950,71 @@ impl Word3Vec {
                             .max(0.0001);
                 }
 
-                let mut at_end_of_file = false;
                 if sen.is_empty() {
+                    let at_end_of_file;
                     (sen, at_end_of_file) =
                         self.load_sentence(&mut fi, &mut rng, &mut word_count)?;
-                    sentence_position = 0;
+
+                    if at_end_of_file
+                        || word_count > self.train_words / self.options.num_threads as u64
+                    {
+                        break;
+                    }
                 }
 
-                if at_end_of_file || word_count > self.train_words / self.options.num_threads as u64
-                {
-                    self.word_count_actual
-                        .fetch_add(word_count - last_word_count, Ordering::Relaxed);
-                    break;
-                }
+                for sentence_position in 0..sen.len() {
+                    let word = sen[sentence_position];
+                    emb_adjust.fill(0.0);
+                    let b = rng.rand_u64() as usize % self.options.window;
 
-                let word = sen[sentence_position];
-                neu1.fill(0.0);
-                neu1e.fill(0.0);
-                let b = rng.rand_u64() as usize % self.options.window;
-
-                //train skip-gram
-                for a in b..(window * 2 + 1 - b) {
-                    if a != window {
-                        if sentence_position + a < window {
-                            continue;
-                        }
-                        let c = sentence_position + a - window;
-                        if c >= sen.len() {
-                            continue;
-                        }
-                        let last_word = sen[c];
-                        let l1 = last_word * layer1_size;
-                        neu1e.fill(0.0);
-
-                        for d in 0..self.vocab[word].code.len() {
-                            // Propagate hidden -> output
-                            let l2 = self.vocab[word].point[d] as usize * layer1_size;
-                            let f = (0..layer1_size)
-                                .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
-                                .sum::<real>();
-                            if f <= -MAX_EXP || f >= MAX_EXP {
+                    //train skip-gram
+                    for a in b..(window * 2 + 1 - b) {
+                        if a != window {
+                            if sentence_position + a < window {
                                 continue;
                             }
-                            let f = self.sigmoid(f);
-                            // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                            let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
-                            // Propagate errors output -> hidden
-                            for c in 0..layer1_size {
-                                neu1e[c] += g * self.weights[c + l2].get();
+                            let c = sentence_position + a - window;
+                            if c >= sen.len() {
+                                continue;
                             }
-                            // Learn weights hidden -> output
-                            for c in 0..layer1_size {
-                                self.weights[c + l2].add(g * self.embeddings[c + l1].get());
-                            }
-                        }
+                            let last_word = sen[c];
+                            let l1 = last_word * layer1_size;
+                            emb_adjust.fill(0.0);
 
-                        // Learn weights input -> hidden
-                        for c in 0..layer1_size {
-                            self.embeddings[c + l1].add(neu1e[c]);
+                            for d in 0..self.vocab[word].code.len() {
+                                // Propagate hidden -> output
+                                let l2 = self.vocab[word].point[d] as usize * layer1_size;
+                                let f = (0..layer1_size)
+                                    .map(|c| {
+                                        self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
+                                    })
+                                    .sum::<real>();
+                                if f <= -MAX_EXP || f >= MAX_EXP {
+                                    continue;
+                                }
+                                let f = self.sigmoid(f);
+                                // 'g' is the gradient (d/df loss) multiplied by the learning rate
+                                let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                                // Propagate errors output -> hidden
+                                for c in 0..layer1_size {
+                                    emb_adjust[c] += g * self.weights[c + l2].get();
+                                }
+                                for c in 0..layer1_size {
+                                    self.weights[c + l2].add(g * self.embeddings[c + l1].get());
+                                }
+                            }
+
+                            for c in 0..layer1_size {
+                                self.embeddings[c + l1].add(emb_adjust[c]);
+                            }
                         }
                     }
                 }
-                sentence_position += 1;
-                if sentence_position >= sen.len() {
-                    sen.clear();
-                }
+                sen.clear();
             }
+
+            self.word_count_actual
+                .fetch_add(word_count - last_word_count, Ordering::Relaxed);
 
             word_count = 0;
             last_word_count = 0;

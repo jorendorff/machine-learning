@@ -864,8 +864,172 @@ impl Word3Vec {
         Ok(())
     }
 
+    fn load_sentence(&self, fi: &mut BufReader<File>, rng: &mut Rng, word_count: &mut u64) -> Result<(Vec<usize>, bool)> {
+        let mut sen = vec![];
+        loop {
+            let word = self
+                .read_word_index(fi)
+                .context("error reading a word from training data")?;
+            let word = match word {
+                None => return Ok((sen, true)),
+                Some(None) => continue,
+                Some(Some(i)) => i,
+            };
+            *word_count += 1;
+            if word == 0 {
+                break;
+            }
+
+            // The subsampling randomly discards frequent words while keeping the ranking same
+            let sample = self.options.sample;
+            if sample > 0.0 {
+                let f = self.vocab[word].cn as real;
+                let k = sample * self.train_words as real;
+                let ran = ((f / k).sqrt() + 1.0) * k / f;
+                if ran < rng.rand_real() {
+                    continue;
+                }
+            }
+            sen.push(word);
+            if sen.len() >= MAX_SENTENCE_LENGTH {
+                break;
+            }
+        }
+        Ok((sen, false))
+    }
+
+    fn train_model_thread_simplified(&self, id: usize) -> Result<()> {
+        let window = self.options.window;
+
+        let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
+        let mut neu1e: Vec<real> = vec![0.0; self.options.layer1_size];
+
+        let mut fi = BufReader::new(File::open(&self.options.train_file)?);
+        fi.seek(SeekFrom::Start(
+            self.file_size / self.options.num_threads as u64 * id as u64,
+        ))
+        .context("error seeking within training file")?;
+
+        let layer1_size = self.options.layer1_size;
+
+        let mut rng = Rng(id as u64);
+        let mut alpha = self.starting_alpha;
+        let mut local_iter = self.options.iter;
+        let mut word_count: u64 = 0;
+        let mut last_word_count: u64 = 0;
+        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
+        let mut sentence_position: usize = 0;
+        loop {
+            if word_count - last_word_count > 10000 {
+                let n = word_count - last_word_count;
+                let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+                last_word_count = word_count;
+
+                if self.options.debug_mode > 1 {
+                    print!(
+                        "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
+                        alpha,
+                        word_count_actual as real
+                            / (self.options.iter as u64 * self.train_words + 1) as real
+                            * 100.0,
+                        word_count_actual as real
+                            / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
+                    );
+                    let _ = io::stdout().flush();
+                }
+                alpha = self.starting_alpha
+                    * (1.0
+                        - word_count_actual as real
+                            / (self.options.iter as u64 * self.train_words + 1) as real)
+                        .max(0.0001);
+            }
+
+            let mut at_end_of_file = false;
+            if sen.is_empty() {
+                (sen, at_end_of_file) = self.load_sentence(&mut fi, &mut rng, &mut word_count)?;
+                sentence_position = 0;
+            }
+
+            if at_end_of_file || word_count > self.train_words / self.options.num_threads as u64 {
+                self.word_count_actual
+                    .fetch_add(word_count - last_word_count, Ordering::Relaxed);
+                local_iter -= 1;
+                if local_iter == 0 {
+                    break;
+                }
+                word_count = 0;
+                last_word_count = 0;
+                sen.clear();
+                fi.seek(SeekFrom::Start(
+                    self.file_size / self.options.num_threads as u64 * id as u64,
+                ))
+                .context("error rewinding file for next iteration")?;
+                continue;
+            }
+
+            let word = sen[sentence_position];
+            neu1.fill(0.0);
+            neu1e.fill(0.0);
+            let b = rng.rand_u64() as usize % self.options.window;
+
+            //train skip-gram
+            for a in b..(window * 2 + 1 - b) {
+                if a != window {
+                    if sentence_position + a < window {
+                        continue;
+                    }
+                    let c = sentence_position + a - window;
+                    if c >= sen.len() {
+                        continue;
+                    }
+                    let last_word = sen[c];
+                    let l1 = last_word * layer1_size;
+                    neu1e.fill(0.0);
+
+                    for d in 0..self.vocab[word].code.len() {
+                        // Propagate hidden -> output
+                        let l2 = self.vocab[word].point[d] as usize * layer1_size;
+                        let f = (0..layer1_size)
+                            .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
+                            .sum::<real>();
+                        if f <= -MAX_EXP {
+                            continue;
+                        } else if f >= MAX_EXP {
+                            continue;
+                        }
+                        let f = self.sigmoid(f);
+                        // 'g' is the gradient (d/df loss) multiplied by the learning rate
+                        let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                        // Propagate errors output -> hidden
+                        for c in 0..layer1_size {
+                            neu1e[c] += g * self.weights[c + l2].get();
+                        }
+                        // Learn weights hidden -> output
+                        for c in 0..layer1_size {
+                            self.weights[c + l2].add(g * self.embeddings[c + l1].get());
+                        }
+                    }
+
+                    // Learn weights input -> hidden
+                    for c in 0..layer1_size {
+                        self.embeddings[c + l1].add(neu1e[c]);
+                    }
+                }
+            }
+            sentence_position += 1;
+            if sentence_position >= sen.len() {
+                sen.clear();
+            }
+        }
+
+        Ok(())
+    }
+
     fn train_model(&mut self) -> Result<()> {
-        println!("Starting training using file {}", self.options.train_file.display());
+        println!(
+            "Starting training using file {}",
+            self.options.train_file.display()
+        );
 
         self.starting_alpha =
             self.options

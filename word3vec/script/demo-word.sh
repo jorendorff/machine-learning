@@ -8,7 +8,7 @@ if [ ! -e text8 ]; then
 fi
 
 cargo build --release
-time cargo run --release --bin word3vec -- \
+time target/release/word3vec \
   --train text8 \
   --output vectors.bin \
   --size=200 \
@@ -19,4 +19,4 @@ time cargo run --release --bin word3vec -- \
   --binary \
   --iter=15
 
-cargo run --bin distance vectors.bin
+target/release/distance vectors.bin

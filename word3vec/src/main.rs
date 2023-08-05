@@ -894,14 +894,15 @@ impl Word3Vec {
         fi: &mut BufReader<File>,
         rng: &mut Rng,
         word_count: &mut u64,
-    ) -> Result<(Vec<usize>, bool)> {
-        let mut sen = vec![];
+        sen: &mut Vec<usize>,
+    ) -> Result<bool> {
+        sen.clear();
         loop {
             let word = self
                 .read_word_index(fi)
                 .context("error reading a word from training data")?;
             let word = match word {
-                None => return Ok((sen, true)),
+                None => return Ok(true),
                 Some(None) => continue,
                 Some(Some(i)) => i,
             };
@@ -925,7 +926,7 @@ impl Word3Vec {
                 break;
             }
         }
-        Ok((sen, false))
+        Ok(false)
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -954,16 +955,11 @@ impl Word3Vec {
                     self.report_progress(word_count, &mut last_word_count, &mut alpha);
                 }
 
-                if sen.is_empty() {
-                    let at_end_of_file;
-                    (sen, at_end_of_file) =
-                        self.load_sentence(&mut fi, &mut rng, &mut word_count)?;
-
-                    if at_end_of_file
-                        || word_count > self.train_words / self.options.num_threads as u64
-                    {
-                        break;
-                    }
+                let at_end_of_file = self.load_sentence(&mut fi, &mut rng, &mut word_count, &mut sen)?;
+                if at_end_of_file
+                    || word_count > self.train_words / self.options.num_threads as u64
+                {
+                    break;
                 }
 
                 for sentence_position in 0..sen.len() {
@@ -1014,7 +1010,6 @@ impl Word3Vec {
                         }
                     }
                 }
-                sen.clear();
             }
 
             self.word_count_actual

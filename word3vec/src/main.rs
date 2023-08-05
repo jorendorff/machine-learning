@@ -969,44 +969,45 @@ impl Word3Vec {
 
                     //train skip-gram
                     for a in b..(window * 2 + 1 - b) {
-                        if a != window {
-                            if sentence_position + a < window {
+                        if a == window {
+                            continue;
+                        }
+                        if sentence_position + a < window {
+                            continue;
+                        }
+                        let c = sentence_position + a - window;
+                        if c >= sen.len() {
+                            continue;
+                        }
+                        let last_word = sen[c];
+                        let l1 = last_word * layer1_size;
+                        emb_adjust.fill(0.0);
+
+                        for d in 0..self.vocab[word].code.len() {
+                            // Propagate hidden -> output
+                            let l2 = self.vocab[word].point[d] as usize * layer1_size;
+                            let f = (0..layer1_size)
+                                .map(|c| {
+                                    self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
+                                })
+                                .sum::<real>();
+                            if f <= -MAX_EXP || f >= MAX_EXP {
                                 continue;
                             }
-                            let c = sentence_position + a - window;
-                            if c >= sen.len() {
-                                continue;
-                            }
-                            let last_word = sen[c];
-                            let l1 = last_word * layer1_size;
-                            emb_adjust.fill(0.0);
-
-                            for d in 0..self.vocab[word].code.len() {
-                                // Propagate hidden -> output
-                                let l2 = self.vocab[word].point[d] as usize * layer1_size;
-                                let f = (0..layer1_size)
-                                    .map(|c| {
-                                        self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
-                                    })
-                                    .sum::<real>();
-                                if f <= -MAX_EXP || f >= MAX_EXP {
-                                    continue;
-                                }
-                                let f = self.sigmoid(f);
-                                // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                                let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
-                                // Propagate errors output -> hidden
-                                for c in 0..layer1_size {
-                                    emb_adjust[c] += g * self.weights[c + l2].get();
-                                }
-                                for c in 0..layer1_size {
-                                    self.weights[c + l2].add(g * self.embeddings[c + l1].get());
-                                }
-                            }
-
+                            let f = self.sigmoid(f);
+                            // 'g' is the gradient (d/df loss) multiplied by the learning rate
+                            let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                            // Propagate errors output -> hidden
                             for c in 0..layer1_size {
-                                self.embeddings[c + l1].add(emb_adjust[c]);
+                                emb_adjust[c] += g * self.weights[c + l2].get();
                             }
+                            for c in 0..layer1_size {
+                                self.weights[c + l2].add(g * self.embeddings[c + l1].get());
+                            }
+                        }
+
+                        for c in 0..layer1_size {
+                            self.embeddings[c + l1].add(emb_adjust[c]);
                         }
                     }
                 }

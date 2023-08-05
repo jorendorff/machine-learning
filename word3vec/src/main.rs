@@ -945,11 +945,11 @@ impl Word3Vec {
 
         let mut rng = Rng(id as u64);
         let mut alpha = self.starting_alpha;
-        let mut word_count: u64 = 0;
-        let mut last_word_count: u64 = 0;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
 
         for _epoch in 0..self.options.iter {
+            let mut word_count: u64 = 0;
+            let mut last_word_count: u64 = 0;
             loop {
                 if word_count - last_word_count > 10000 {
                     self.report_progress(word_count, &mut last_word_count, &mut alpha);
@@ -965,12 +965,12 @@ impl Word3Vec {
                 for sentence_position in 0..sen.len() {
                     let word = sen[sentence_position];
                     emb_adjust.fill(0.0);
-                    let width = window - rng.rand_u64() as usize % window;
+                    let radius = window - rng.rand_u64() as usize % window;
 
                     //train skip-gram
                     // Range of `width` to either side of `sentence_position`.
-                    let start = (sentence_position).saturating_sub(width);
-                    let stop = (sentence_position + width + 1).min(sen.len());
+                    let start = (sentence_position).saturating_sub(radius);
+                    let stop = (sentence_position + radius + 1).min(sen.len());
                     for c in start..stop {
                         if c == sentence_position {
                             continue;
@@ -1012,9 +1012,6 @@ impl Word3Vec {
             self.word_count_actual
                 .fetch_add(word_count - last_word_count, Ordering::Relaxed);
 
-            word_count = 0;
-            last_word_count = 0;
-            sen.clear();
             fi.seek(SeekFrom::Start(
                 self.file_size / self.options.num_threads as u64 * id as u64,
             ))

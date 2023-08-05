@@ -941,15 +941,17 @@ impl Word3Vec {
         ))
         .context("error seeking within training file")?;
 
-        let layer1_size = self.options.layer1_size;
+        let dim = self.options.layer1_size; // number of elements in embedding vector
 
         let mut rng = Rng(id as u64);
         let mut alpha = self.starting_alpha;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
 
+        // Over training epochs
         for _epoch in 0..self.options.iter {
             let mut word_count: u64 = 0;
             let mut last_word_count: u64 = 0;
+            // Over "sentences" (chunks of 1000 words)
             loop {
                 if word_count - last_word_count > 10000 {
                     self.report_progress(word_count, &mut last_word_count, &mut alpha);
@@ -962,13 +964,13 @@ impl Word3Vec {
                     break;
                 }
 
+                // Over word 1
                 for sentence_position in 0..sen.len() {
                     let word = sen[sentence_position];
                     emb_adjust.fill(0.0);
                     let radius = window - rng.rand_u64() as usize % window;
 
-                    //train skip-gram
-                    // Range of `width` to either side of `sentence_position`.
+                    // Over word 2 (ranges `radius` to either side of `sentence_position`).
                     let start = (sentence_position).saturating_sub(radius);
                     let stop = (sentence_position + radius + 1).min(sen.len());
                     for c in start..stop {
@@ -976,13 +978,14 @@ impl Word3Vec {
                             continue;
                         }
                         let last_word = sen[c];
-                        let l1 = last_word * layer1_size;
+                        let l1 = last_word * dim;
                         emb_adjust.fill(0.0);
 
+                        // Over predictors in the tree
                         for d in 0..self.vocab[word].code.len() {
                             // Propagate hidden -> output
-                            let l2 = self.vocab[word].point[d] as usize * layer1_size;
-                            let f = (0..layer1_size)
+                            let l2 = self.vocab[word].point[d] as usize * dim;
+                            let f = (0..dim)
                                 .map(|c| {
                                     self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
                                 })
@@ -994,16 +997,16 @@ impl Word3Vec {
                             // 'g' is the gradient (d/df loss) multiplied by the learning rate
                             let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
                             // Propagate errors output -> hidden
-                            for c in 0..layer1_size {
-                                emb_adjust[c] += g * self.weights[c + l2].get();
+                            for c in 0..dim {
+                                emb_adjust[c] += g * self.weights[l2 + c].get();
                             }
-                            for c in 0..layer1_size {
-                                self.weights[c + l2].add(g * self.embeddings[c + l1].get());
+                            for c in 0..dim {
+                                self.weights[l2 + c].add(g * self.embeddings[l1 + c].get());
                             }
                         }
 
-                        for c in 0..layer1_size {
-                            self.embeddings[c + l1].add(emb_adjust[c]);
+                        for c in 0..dim {
+                            self.embeddings[l1 + c].add(emb_adjust[c]);
                         }
                     }
                 }

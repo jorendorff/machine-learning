@@ -1,7 +1,9 @@
-use anyhow::{anyhow, Result, Context};
-use std::path::{Path, PathBuf};
-use std::io::{BufReader, BufRead, Read, Write};
+use std::cmp::Reverse;
 use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use ordered_float::OrderedFloat;
 
@@ -45,14 +47,24 @@ fn load(file_name: &Path) -> Result<Vectors> {
     let mut line = String::new();
     f.read_line(&mut line).context("error reading input file")?;
     let mut fields = line.split_whitespace();
-    let words: usize = fields.next().ok_or_else(|| anyhow!("invalid input file"))?.parse().context("invalid input file")?;
-    let size: usize = fields.next().ok_or_else(|| anyhow!("invalid input file"))?.parse().context("invalid input file")?;
+    let words: usize = fields
+        .next()
+        .ok_or_else(|| anyhow!("invalid input file"))?
+        .parse()
+        .context("invalid input file")?;
+    let size: usize = fields
+        .next()
+        .ok_or_else(|| anyhow!("invalid input file"))?
+        .parse()
+        .context("invalid input file")?;
 
     let mut vocab: Vec<String> = vec![];
     let mut m = vec![0.0; words * size];
     for b in 0..words {
         let mut vocab_word = Vec::<u8>::with_capacity(MAX_SIZE);
-        let count = f.read_until(b' ', &mut vocab_word).context("error reading input file")?;
+        let count = f
+            .read_until(b' ', &mut vocab_word)
+            .context("error reading input file")?;
         if count == 0 {
             break;
         }
@@ -68,13 +80,23 @@ fn load(file_name: &Path) -> Result<Vectors> {
         normalize(row);
     }
 
-    Ok(Vectors { words, size, vocab, m })
+    Ok(Vectors {
+        words,
+        size,
+        vocab,
+        m,
+    })
 }
 
 fn main() {
     let options = Options::parse();
 
-    let Vectors {words, size, vocab, m} = load(&options.file_name).unwrap();
+    let Vectors {
+        words,
+        size,
+        vocab,
+        m,
+    } = load(&options.file_name).unwrap();
 
     'outer: loop {
         print!("Enter word or sentence (EXIT to break): ");
@@ -89,15 +111,15 @@ fn main() {
             Ok(0) => break,
             Ok(_) => {}
         }
-        if st1 == "EXIT" {
+        if st1.trim() == "EXIT" {
             break;
         }
 
         let mut bi: Vec<usize> = vec![];
-        for sta in st1.split(' ') {
+        for sta in st1.trim().split(' ') {
             let b = vocab.iter().position(|v| v == sta);
             println!();
-            println!("Word: {sta}  Position in vocabulary: ");
+            print!("Word: {sta}  Position in vocabulary: ");
             match b {
                 None => {
                     println!("None");
@@ -131,9 +153,9 @@ fn main() {
                 (vocab[c].as_str(), dist)
             })
             .collect();
-        best.sort_by_key(|(_word, dist)| OrderedFloat(*dist));
+        best.sort_by_key(|(_word, dist)| Reverse(OrderedFloat(*dist)));
         for (word, dist) in best.iter().take(N) {
-            println!("{:50}\t\t{}", word, dist);
+            println!("{:>50}\t\t{:8.6}", word, dist);
         }
     }
 }

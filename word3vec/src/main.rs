@@ -965,18 +965,14 @@ impl Word3Vec {
                 for sentence_position in 0..sen.len() {
                     let word = sen[sentence_position];
                     emb_adjust.fill(0.0);
-                    let b = rng.rand_u64() as usize % self.options.window;
+                    let width = window - rng.rand_u64() as usize % window;
 
                     //train skip-gram
-                    for a in b..(window * 2 + 1 - b) {
-                        if a == window {
-                            continue;
-                        }
-                        if sentence_position + a < window {
-                            continue;
-                        }
-                        let c = sentence_position + a - window;
-                        if c >= sen.len() {
+                    // Range of `width` to either side of `sentence_position`.
+                    let start = (sentence_position).saturating_sub(width);
+                    let stop = (sentence_position + width + 1).min(sen.len());
+                    for c in start..stop {
+                        if c == sentence_position {
                             continue;
                         }
                         let last_word = sen[c];

@@ -864,6 +864,31 @@ impl Word3Vec {
         Ok(())
     }
 
+    fn report_progress(&self, word_count: u64, last_word_count: &mut u64, alpha: &mut real) {
+        let n = word_count - *last_word_count;
+        let word_count_actual =
+            self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+        *last_word_count = word_count;
+
+        if self.options.debug_mode > 1 {
+            print!(
+                "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
+                alpha,
+                word_count_actual as real
+                    / (self.options.iter as u64 * self.train_words + 1) as real
+                    * 100.0,
+                word_count_actual as real
+                    / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
+            );
+            let _ = io::stdout().flush();
+        }
+        *alpha = self.starting_alpha
+            * (1.0
+               - word_count_actual as real
+               / (self.options.iter as u64 * self.train_words + 1) as real)
+            .max(0.0001);
+    }
+
     fn load_sentence(
         &self,
         fi: &mut BufReader<File>,
@@ -926,28 +951,7 @@ impl Word3Vec {
         for _epoch in 0..self.options.iter {
             loop {
                 if word_count - last_word_count > 10000 {
-                    let n = word_count - last_word_count;
-                    let word_count_actual =
-                        self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
-                    last_word_count = word_count;
-
-                    if self.options.debug_mode > 1 {
-                        print!(
-                            "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
-                            alpha,
-                            word_count_actual as real
-                                / (self.options.iter as u64 * self.train_words + 1) as real
-                                * 100.0,
-                            word_count_actual as real
-                                / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
-                        );
-                        let _ = io::stdout().flush();
-                    }
-                    alpha = self.starting_alpha
-                        * (1.0
-                            - word_count_actual as real
-                                / (self.options.iter as u64 * self.train_words + 1) as real)
-                            .max(0.0001);
+                    self.report_progress(word_count, &mut last_word_count, &mut alpha);
                 }
 
                 if sen.is_empty() {

@@ -953,10 +953,6 @@ impl Word3Vec {
             let mut last_word_count: u64 = 0;
             // Over "sentences" (chunks of 1000 words)
             loop {
-                if word_count - last_word_count > 10000 {
-                    self.report_progress(word_count, &mut last_word_count, &mut alpha);
-                }
-
                 let at_end_of_file = self.load_sentence(&mut fi, &mut rng, &mut word_count, &mut sen)?;
                 if at_end_of_file
                     || word_count > self.train_words / self.options.num_threads as u64
@@ -1009,6 +1005,10 @@ impl Word3Vec {
                             self.embeddings[l1 + c].add(emb_adjust[c]);
                         }
                     }
+                }
+
+                if word_count - last_word_count > 10000 {
+                    self.report_progress(word_count, &mut last_word_count, &mut alpha);
                 }
             }
 

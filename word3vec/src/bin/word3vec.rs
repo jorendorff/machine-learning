@@ -871,8 +871,7 @@ impl Word3Vec {
 
     fn report_progress(&self, word_count: u64, last_word_count: &mut u64, alpha: &mut real) {
         let n = word_count - *last_word_count;
-        let word_count_actual =
-            self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+        let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
         *last_word_count = word_count;
 
         if self.options.debug_mode > 1 {
@@ -889,9 +888,9 @@ impl Word3Vec {
         }
         *alpha = self.starting_alpha
             * (1.0
-               - word_count_actual as real
-               / (self.options.iter as u64 * self.train_words + 1) as real)
-            .max(0.0001);
+                - word_count_actual as real
+                    / (self.options.iter as u64 * self.train_words + 1) as real)
+                .max(0.0001);
     }
 
     /// The result contains multiple threads, which contain multiple sentences,
@@ -902,7 +901,8 @@ impl Word3Vec {
         'outer: loop {
             let mut sentence: Vec<usize> = vec![];
             loop {
-                let word = self.read_word_index(&mut f)
+                let word = self
+                    .read_word_index(&mut f)
                     .context("error reading a word from training data")?;
                 let word = match word {
                     None => break 'outer,   // eof
@@ -1002,9 +1002,7 @@ impl Word3Vec {
                             // Propagate hidden -> output
                             let l2 = self.vocab[word].point[d] as usize * dim;
                             let f = (0..dim)
-                                .map(|c| {
-                                    self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
-                                })
+                                .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
                                 .sum::<real>();
                             if f <= -MAX_EXP || f >= MAX_EXP {
                                 continue;

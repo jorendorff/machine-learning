@@ -11,17 +11,17 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use indicatif::{ProgressBar, ProgressStyle, ProgressState};
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 const MAX_SENTENCE_LENGTH: usize = 1000;
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 const MAX_STRING: usize = 100;
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 #[allow(non_camel_case_types)]
 type real = f32; // Precision of float numbers
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VocabWord {
     cn: u64,
@@ -30,7 +30,7 @@ struct VocabWord {
     code: Vec<u8>,
 }
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 #[derive(Debug, Serialize, Deserialize)]
 struct Model {
     size: usize,
@@ -128,7 +128,7 @@ impl Model {
     // Create binary Huffman tree using the word counts.
     // Frequent words will have short unique binary codes.
     //
-    // copied from word3vec/src/main.rs
+    // copied from word3vec/src/bin/word3vec.rs
     #[cfg(test)]
     #[allow(clippy::needless_range_loop)]
     fn create_binary_tree(&mut self) {
@@ -313,10 +313,10 @@ impl<'a> Predictor<'a> {
     }
 }
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 struct Rng(u64);
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 impl Rng {
     fn rand_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_mul(25214903917).wrapping_add(11);
@@ -338,7 +338,7 @@ struct SentenceReader<'a> {
     rng: Rng,
 }
 
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 fn read_byte(fin: &mut BufReader<File>) -> Option<Result<u8, io::Error>> {
     let mut byte = 0;
     loop {
@@ -352,7 +352,7 @@ fn read_byte(fin: &mut BufReader<File>) -> Option<Result<u8, io::Error>> {
 }
 
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
-// copied from word3vec/src/main.rs
+// copied from word3vec/src/bin/word3vec.rs
 fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
     let mut word = vec![];
     loop {
@@ -428,7 +428,7 @@ impl<'a> SentenceReader<'a> {
 impl<'a> Iterator for SentenceReader<'a> {
     type Item = Result<Vec<usize>>;
 
-    // partly copied from word3vec/src/main.rs
+    // partly copied from word3vec/src/bin/word3vec.rs
     fn next(&mut self) -> Option<Result<Vec<usize>>> {
         let mut sen = vec![];
         loop {

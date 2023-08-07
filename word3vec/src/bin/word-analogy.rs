@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use ordered_float::OrderedFloat;
+
 use word3vec::{dot, normalize, Vectors};
 
 /// number of closest words that will be shown
@@ -23,7 +24,7 @@ fn main() {
 
     let mut line = String::new();
     'outer: loop {
-        print!("Enter word or sentence (EXIT to break): ");
+        print!("Enter three words (EXIT to break): ");
         let _ = std::io::stdout().flush();
 
         line.clear();
@@ -41,10 +42,9 @@ fn main() {
 
         let mut bi: Vec<usize> = vec![];
         for word in line.trim().split(' ') {
-            let b = vectors.lookup_word(word);
             println!();
             print!("Word: {word}  Position in vocabulary: ");
-            match b {
+            match vectors.lookup_word(word) {
                 None => {
                     println!("None");
                     println!("Out of dictionary word!");
@@ -55,6 +55,11 @@ fn main() {
                     bi.push(i);
                 }
             }
+        }
+
+        if bi.len() != 3 {
+            println!("{} words were entered.. three words are needed at the input to perform the calculation", bi.len());
+            continue;
         }
 
         println!();
@@ -82,4 +87,48 @@ fn main() {
             println!("{:>50}\t\t{:8.6}", word, dist);
         }
     }
+
+    /*
+    FILE *f;
+    char st1[max_size];
+    char bestw[N][max_size];
+    char file_name[max_size], st[100][max_size];
+    float dist, len, bestd[N], vec[max_size];
+    long long words, size, a, b, c, d, cn, bi[100];
+    float *M;
+    char *vocab;
+
+
+      printf("\n                                              Word              Distance\n------------------------------------------------------------------------\n");
+      for (a = 0; a < size; a++) vec[a] = M[a + bi[1] * size] - M[a + bi[0] * size] + M[a + bi[2] * size];
+      len = 0;
+      for (a = 0; a < size; a++) len += vec[a] * vec[a];
+      len = sqrt(len);
+      for (a = 0; a < size; a++) vec[a] /= len;
+      for (a = 0; a < N; a++) bestd[a] = 0;
+      for (a = 0; a < N; a++) bestw[a][0] = 0;
+      for (c = 0; c < words; c++) {
+        if (c == bi[0]) continue;
+        if (c == bi[1]) continue;
+        if (c == bi[2]) continue;
+        a = 0;
+        for (b = 0; b < cn; b++) if (bi[b] == c) a = 1;
+        if (a == 1) continue;
+        dist = 0;
+        for (a = 0; a < size; a++) dist += vec[a] * M[a + c * size];
+        for (a = 0; a < N; a++) {
+          if (dist > bestd[a]) {
+            for (d = N - 1; d > a; d--) {
+              bestd[d] = bestd[d - 1];
+              strcpy(bestw[d], bestw[d - 1]);
+            }
+            bestd[a] = dist;
+            strcpy(bestw[a], &vocab[c * max_w]);
+            break;
+          }
+        }
+      }
+      for (a = 0; a < N; a++) printf("%50s\t\t%f\n", bestw[a], bestd[a]);
+
+       */
 }

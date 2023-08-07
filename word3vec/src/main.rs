@@ -169,6 +169,10 @@ struct Word3Vec {
     exp_table: Vec<real>,
     start: Instant,
     table: Vec<usize>,
+    /// All the training data. `Vec<usize>` is a sentence;
+    /// `Vec<Vec<Vec<usize>>>` is a list of lists of sentences.
+    /// `training_sentences.len() == options.num_threads` when populated.
+    training_sentences: Vec<Vec<Vec<usize>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -284,6 +288,7 @@ impl Word3Vec {
             exp_table,
             start: Instant::now(),
             table: Vec::with_capacity(TABLE_SIZE),
+            training_sentences: vec![],
         }
     }
 
@@ -889,29 +894,59 @@ impl Word3Vec {
             .max(0.0001);
     }
 
-    fn load_sentence(
+    /// The result contains multiple threads, which contain multiple sentences,
+    /// which contain multiple words.
+    fn load_training_file(&self) -> Result<Vec<Vec<Vec<usize>>>> {
+        let mut f = BufReader::new(File::open(&self.options.train_file)?);
+        let mut sentences = vec![];
+        'outer: loop {
+            let mut sentence: Vec<usize> = vec![];
+            loop {
+                let word = self.read_word_index(&mut f)
+                    .context("error reading a word from training data")?;
+                let word = match word {
+                    None => break 'outer,   // eof
+                    Some(None) => continue, // unrecognized word
+                    Some(Some(0)) => break, // newline (end of sentence)
+                    Some(Some(i)) => i,
+                };
+                sentence.push(word);
+                if sentence.len() >= MAX_SENTENCE_LENGTH {
+                    break;
+                }
+            }
+            if !sentence.is_empty() {
+                sentences.push(sentence);
+            }
+        }
+
+        // In the original program, threads did not split the input on sentence
+        // or even word boundaries. Each one did a seek to an offset
+        // proportionally (id/N) of the way through the file. We just divvy up
+        // the sentences.
+        let num_threads = self.options.num_threads;
+        let mut threads: Vec<Vec<Vec<usize>>> = (0..num_threads)
+            .rev()
+            .map(|i| {
+                let start = sentences.len() * i / num_threads;
+                sentences.split_off(start)
+            })
+            .collect();
+        threads.reverse();
+        Ok(threads)
+    }
+
+    fn sample_sentence(
         &self,
-        fi: &mut BufReader<File>,
+        next_sentence: &[usize],
         rng: &mut Rng,
         word_count: &mut u64,
         sen: &mut Vec<usize>,
-    ) -> Result<bool> {
+    ) {
         sen.clear();
-        loop {
-            let word = self
-                .read_word_index(fi)
-                .context("error reading a word from training data")?;
-            let word = match word {
-                None => return Ok(true),
-                Some(None) => continue,
-                Some(Some(i)) => i,
-            };
-            *word_count += 1;
-            if word == 0 {
-                break;
-            }
-
+        for &word in next_sentence {
             // The subsampling randomly discards frequent words while keeping the ranking same
+            *word_count += 1;
             let sample = self.options.sample;
             if sample > 0.0 {
                 let f = self.vocab[word].cn as real;
@@ -922,43 +957,28 @@ impl Word3Vec {
                 }
             }
             sen.push(word);
-            if sen.len() >= MAX_SENTENCE_LENGTH {
-                break;
-            }
         }
-        Ok(false)
     }
 
-    #[allow(clippy::needless_range_loop)]
     fn train_model_thread_simplified(&self, id: usize) -> Result<()> {
         let window = self.options.window;
 
         let mut emb_adjust: Vec<real> = vec![0.0; self.options.layer1_size];
 
-        let mut fi = BufReader::new(File::open(&self.options.train_file)?);
-        fi.seek(SeekFrom::Start(
-            self.file_size / self.options.num_threads as u64 * id as u64,
-        ))
-        .context("error seeking within training file")?;
-
         let dim = self.options.layer1_size; // number of elements in embedding vector
 
         let mut rng = Rng(id as u64);
         let mut alpha = self.starting_alpha;
-        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
+        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
         // Over training epochs
         for _epoch in 0..self.options.iter {
             let mut word_count: u64 = 0;
             let mut last_word_count: u64 = 0;
             // Over "sentences" (chunks of 1000 words)
-            loop {
-                let at_end_of_file = self.load_sentence(&mut fi, &mut rng, &mut word_count, &mut sen)?;
-                if at_end_of_file
-                    || word_count > self.train_words / self.options.num_threads as u64
-                {
-                    break;
-                }
+            for sentence in &self.training_sentences[id] {
+                word_count += sentence.len() as u64;
+                self.sample_sentence(sentence, &mut rng, &mut word_count, &mut sen);
 
                 // Over word 1
                 for sentence_position in 0..sen.len() {
@@ -1014,11 +1034,6 @@ impl Word3Vec {
 
             self.word_count_actual
                 .fetch_add(word_count - last_word_count, Ordering::Relaxed);
-
-            fi.seek(SeekFrom::Start(
-                self.file_size / self.options.num_threads as u64 * id as u64,
-            ))
-            .context("error rewinding file for next iteration")?;
         }
 
         Ok(())
@@ -1043,6 +1058,7 @@ impl Word3Vec {
         if let Some(f) = &self.options.save_vocab_file {
             self.save_vocab(f)?;
         }
+        self.training_sentences = self.load_training_file()?;
         self.init_net();
         if self.options.negative > 0 {
             self.init_unigram_table();

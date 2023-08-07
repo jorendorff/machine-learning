@@ -980,21 +980,21 @@ impl Word3Vec {
                 word_count += sentence.len() as u64;
                 self.sample_sentence(sentence, &mut rng, &mut word_count, &mut sen);
 
-                // Over word 1
+                // Over word 1 (the word being predicted)
                 for sentence_position in 0..sen.len() {
-                    let word = sen[sentence_position];
+                    let target_word = sen[sentence_position];
+                    let l1 = target_word * dim;
                     emb_adjust.fill(0.0);
                     let radius = window - rng.rand_u64() as usize % window;
 
-                    // Over word 2 (ranges `radius` to either side of `sentence_position`).
+                    // Over word 2 (the given word - ranges `radius` to either side of `sentence_position`).
                     let start = (sentence_position).saturating_sub(radius);
                     let stop = (sentence_position + radius + 1).min(sen.len());
                     for c in start..stop {
                         if c == sentence_position {
                             continue;
                         }
-                        let last_word = sen[c];
-                        let l1 = last_word * dim;
+                        let word = sen[c];
                         emb_adjust.fill(0.0);
 
                         // Over predictors in the tree

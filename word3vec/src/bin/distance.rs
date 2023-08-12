@@ -61,12 +61,13 @@ fn main() {
         println!("                                              Word       Cosine distance");
         println!("------------------------------------------------------------------------");
 
-        let mut vec = vec![0.0f32; vectors.size()];
-        let a = &vectors[bi[0]];
-        let b = &vectors[bi[1]];
-        let c = &vectors[bi[2]];
-        for i in 0..vectors.size() {
-            vec[i] = b[i] - a[i] + c[i];
+        let size = vectors.size();
+        let mut vec = vec![0.0f32; size];
+        for &i in &bi {
+            let row = &vectors[i];
+            for (v, r) in vec.iter_mut().zip(row.iter().copied()) {
+                *v += r;
+            }
         }
         normalize(&mut vec);
 

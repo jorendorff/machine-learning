@@ -1,0 +1,4 @@
+-   add program to measure quality of model by comparing predicted conditional probabilities to
+    observed frequencies
+
+-   test models trained with varying numbers of epochs, observe quality difference

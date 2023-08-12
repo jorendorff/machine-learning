@@ -24,10 +24,10 @@ type real = f32; // Precision of float numbers
 // copied from word3vec/src/bin/word3vec.rs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VocabWord {
-    cn: u64,
-    point: Vec<u32>,
+    count: u64,
     word: String,
-    code: Vec<u8>,
+    decision_indexes: Vec<u32>,
+    decision_path: Vec<u8>,
 }
 
 // copied from word3vec/src/bin/word3vec.rs
@@ -36,7 +36,6 @@ struct Model {
     size: usize,
     sample: real,
     window: usize,
-
     vocab: Vec<VocabWord>,
     embeddings: Vec<real>,
     weights: Vec<real>,
@@ -95,10 +94,10 @@ impl Model {
             nwords - 1,
         );
         for vw in &model.vocab {
-            anyhow::ensure!(vw.point.len() == vw.code.len());
-            for i in 0..vw.point.len() - 1 {
+            anyhow::ensure!(vw.decision_indexes.len() == vw.decision_path.len());
+            for i in 0..vw.decision_indexes.len() - 1 {
                 anyhow::ensure!(
-                    vw.point[i] > vw.point[i + 1],
+                    vw.decision_indexes[i] > vw.decision_indexes[i + 1],
                     "paths must be strictly decreasing"
                 );
             }
@@ -114,8 +113,8 @@ impl Model {
     fn predict(&self, a: usize, b: usize) -> real {
         let size = self.size;
         let va = &self.embeddings[a * size..][..size];
-        let point = &self.vocab[b].point;
-        let code = &self.vocab[b].code;
+        let point = &self.vocab[b].decision_indexes;
+        let code = &self.vocab[b].decision_path;
         assert_eq!(point.len(), code.len());
         let mut p: real = 1.0;
         for (&node, &dir) in point.iter().zip(code.iter()) {
@@ -138,7 +137,7 @@ impl Model {
         let mut parent_node = vec![0usize; vocab_size * 2 + 1];
 
         for a in 0..vocab_size {
-            count[a] = self.vocab[a].cn;
+            count[a] = self.vocab[a].count;
         }
         for a in vocab_size..(vocab_size * 2) {
             count[a] = 1_000_000_000_000_000;
@@ -189,10 +188,10 @@ impl Model {
                 }
             }
             code.reverse();
-            self.vocab[a].code = code;
+            self.vocab[a].decision_path = code;
             point.push((vocab_size - 2) as u32);
             point.reverse();
-            self.vocab[a].point = point;
+            self.vocab[a].decision_indexes = point;
         }
     }
 }
@@ -237,12 +236,12 @@ impl<'a> Predictor<'a> {
             num_nodes
         ];
         for vw in &model.vocab {
-            let last_step = vw.point.len() - 1;
-            assert_eq!(vw.point[0] as usize, root);
+            let last_step = vw.decision_indexes.len() - 1;
+            assert_eq!(vw.decision_indexes[0] as usize, root);
             for i in 0..last_step {
-                let parent = vw.point[i] as usize;
-                let which_child = vw.code[i];
-                let child = vw.point[i + 1] as usize;
+                let parent = vw.decision_indexes[i] as usize;
+                let which_child = vw.decision_path[i];
+                let child = vw.decision_indexes[i + 1] as usize;
                 assert!(nodes[child].parent == parent || nodes[child].parent == usize::MAX);
                 nodes[child].parent = parent;
                 nodes[child].which_child = which_child;
@@ -299,10 +298,10 @@ impl<'a> Predictor<'a> {
 
         // Predict probabilities for each word.
         for (out, vw) in self.prob.iter_mut().zip(self.model.vocab.iter()) {
-            let last_step = vw.point.len() - 1;
-            let parent = &self.nodes[vw.point[last_step] as usize];
+            let last_step = vw.decision_indexes.len() - 1;
+            let parent = &self.nodes[vw.decision_indexes[last_step] as usize];
             *out = parent.to_here
-                * if vw.code[last_step] == 0 {
+                * if vw.decision_path[last_step] == 0 {
                     parent.left
                 } else {
                     1.0 - parent.left
@@ -402,7 +401,7 @@ impl<'a> SentenceReader<'a> {
                 .enumerate()
                 .map(|(i, v)| (v.word.clone(), i))
                 .collect(),
-            train_words: model.vocab.iter().map(|vw| vw.cn).sum(),
+            train_words: model.vocab.iter().map(|vw| vw.count).sum(),
             rng: Rng(1),
         })
     }
@@ -445,7 +444,7 @@ impl<'a> Iterator for SentenceReader<'a> {
             // The subsampling randomly discards frequent words while keeping the ranking same
             let sample = self.model.sample;
             if sample > 0.0 {
-                let f = self.model.vocab[word].cn as real;
+                let f = self.model.vocab[word].count as real;
                 let k = sample * self.train_words as real;
                 let ran = ((f / k).sqrt() + 1.0) * k / f;
                 if ran < self.rng.rand_real() {
@@ -589,9 +588,9 @@ mod tests {
             .collect::<String>();
         VocabWord {
             cn: (10.0 * rng.rand_real()).exp().max(5.0).floor() as u64,
-            point: vec![],
+            decision_indexes: vec![],
             word,
-            code: vec![],
+            decision_path: vec![],
         }
     }
 
@@ -604,8 +603,8 @@ mod tests {
 
         let nwords = 5;
         let mut vocab: Vec<VocabWord> = (0..nwords).map(|_| random_word(rng)).collect();
-        vocab.sort_by_key(|vw| Reverse(vw.cn));
-        vocab[0].cn = 0;
+        vocab.sort_by_key(|vw| Reverse(vw.count));
+        vocab[0].count = 0;
         vocab[0].word = "</s>".to_string();
 
         let mut model = Model {

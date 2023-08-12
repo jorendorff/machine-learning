@@ -27,10 +27,10 @@ type real = f32; // Precision of float numbers
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct VocabWord {
-    cn: u64,
-    point: Vec<u32>,
+    count: u64,
     word: String,
-    code: Vec<u8>,
+    decision_indexes: Vec<u32>,
+    decision_path: Vec<u8>,
 }
 
 #[derive(Parser)]
@@ -297,16 +297,16 @@ impl Word3Vec {
         let train_words_pow = self
             .vocab
             .iter()
-            .map(|v| (v.cn as f64).powf(power))
+            .map(|v| (v.count as f64).powf(power))
             .sum::<f64>();
 
         let mut i = 0;
-        let mut d1 = (self.vocab[i].cn as f64).powf(power) / train_words_pow;
+        let mut d1 = (self.vocab[i].count as f64).powf(power) / train_words_pow;
         for a in 0..TABLE_SIZE {
             self.table.push(i);
             if (a as f64 / TABLE_SIZE as f64) > d1 {
                 i += 1;
-                d1 += (self.vocab[i].cn as f64).powf(power) / train_words_pow;
+                d1 += (self.vocab[i].count as f64).powf(power) / train_words_pow;
             }
             if i >= self.vocab.len() {
                 i = self.vocab.len() - 1;
@@ -331,10 +331,10 @@ impl Word3Vec {
     fn add_word_to_vocab(&mut self, word: String) -> usize {
         let n = self.vocab.len();
         self.vocab.push(VocabWord {
-            cn: 0,
-            point: Vec::new(),
+            count: 0,
             word: word.clone(),
-            code: Vec::new(),
+            decision_indexes: Vec::new(),
+            decision_path: Vec::new(),
         });
         self.vocab_hash.insert(word, n);
         n
@@ -343,18 +343,18 @@ impl Word3Vec {
     /// Sorts the vocabulary by frequency using word counts
     fn sort_vocab(&mut self) {
         // Sort the vocabulary and keep </s> at the first position
-        self.vocab[1..].sort_by_key(|vw| Reverse(vw.cn));
+        self.vocab[1..].sort_by_key(|vw| Reverse(vw.count));
 
         self.train_words = 0;
         self.vocab_hash.clear();
         // Words occuring less than min_count times will be discarded from the vocab
         let mut i = 0;
         self.vocab.retain(|vw| {
-            let keep = i == 0 || vw.cn >= self.options.min_count;
+            let keep = i == 0 || vw.count >= self.options.min_count;
             if keep {
                 // Hash will be re-computed, as after the sorting it is not actual
                 self.vocab_hash.insert(vw.word.clone(), i);
-                self.train_words += vw.cn;
+                self.train_words += vw.count;
                 i += 1;
             }
             keep
@@ -362,14 +362,14 @@ impl Word3Vec {
 
         // Allocate memory for the binary tree construction
         for vw in &mut self.vocab {
-            vw.code.reserve(MAX_CODE_LENGTH);
-            vw.point.reserve(MAX_CODE_LENGTH);
+            vw.decision_path.reserve(MAX_CODE_LENGTH);
+            vw.decision_indexes.reserve(MAX_CODE_LENGTH);
         }
     }
 
     /// Reduces the vocabulary by removing infrequent tokens
     fn reduce_vocab(&mut self) {
-        self.vocab.retain(|vw| vw.cn > self.min_reduce);
+        self.vocab.retain(|vw| vw.count > self.min_reduce);
 
         // Hash will be re-computed, as it is not actual
         self.vocab_hash.clear();
@@ -388,7 +388,7 @@ impl Word3Vec {
         let mut parent_node = vec![0usize; vocab_size * 2 + 1];
 
         for a in 0..vocab_size {
-            count[a] = self.vocab[a].cn;
+            count[a] = self.vocab[a].count;
         }
         for a in vocab_size..(vocab_size * 2) {
             count[a] = 1_000_000_000_000_000;
@@ -425,24 +425,24 @@ impl Word3Vec {
 
         // Now assign binary code to each vocabulary word
         for a in 0..vocab_size {
-            let mut code: Vec<u8> = vec![];
-            let mut point: Vec<u32> = vec![];
+            let mut decision_path: Vec<u8> = vec![];
+            let mut decision_indexes: Vec<u32> = vec![];
             let mut b = a;
             loop {
-                if !code.is_empty() {
-                    point.push((b - vocab_size) as u32);
+                if !decision_path.is_empty() {
+                    decision_indexes.push((b - vocab_size) as u32);
                 }
-                code.push(binary[b]);
+                decision_path.push(binary[b]);
                 b = parent_node[b];
                 if b == vocab_size * 2 - 2 {
                     break;
                 }
             }
-            code.reverse();
-            self.vocab[a].code = code;
-            point.push((vocab_size - 2) as u32);
-            point.reverse();
-            self.vocab[a].point = point;
+            decision_path.reverse();
+            self.vocab[a].decision_path = decision_path;
+            decision_indexes.push((vocab_size - 2) as u32);
+            decision_indexes.reverse();
+            self.vocab[a].decision_indexes = decision_indexes;
         }
     }
 
@@ -470,10 +470,10 @@ impl Word3Vec {
             }
 
             if let Some(&a) = self.vocab_hash.get(&word) {
-                self.vocab[a].cn += 1;
+                self.vocab[a].count += 1;
             } else {
                 let a = self.add_word_to_vocab(word);
-                self.vocab[a].cn = 1;
+                self.vocab[a].count = 1;
             }
 
             if self.vocab.len() as f64 > VOCAB_HASH_SIZE as f64 * 0.7 {
@@ -493,7 +493,7 @@ impl Word3Vec {
             File::create(vocab_file).context("error creating vocab file for write")?,
         );
         for vw in &self.vocab {
-            writeln!(fo, "{} {}", vw.word, vw.cn).context("error writing vocab file")?;
+            writeln!(fo, "{} {}", vw.word, vw.count).context("error writing vocab file")?;
         }
         Ok(())
     }
@@ -518,7 +518,7 @@ impl Word3Vec {
             ))?;
 
             let a = self.add_word_to_vocab(word);
-            self.vocab[a].cn = cn;
+            self.vocab[a].count = cn;
         }
         self.sort_vocab();
         if self.options.debug_mode > 0 {
@@ -642,7 +642,7 @@ impl Word3Vec {
                     // The subsampling randomly discards frequent words while keeping the ranking same
                     let sample = self.options.sample;
                     if sample > 0.0 {
-                        let f = self.vocab[word].cn as real;
+                        let f = self.vocab[word].count as real;
                         let k = sample * self.train_words as real;
                         let ran = ((f / k).sqrt() + 1.0) * k / f;
                         if ran < rng.rand_real() {
@@ -695,8 +695,8 @@ impl Word3Vec {
                         neu1[c] /= cw as real;
                         if self.options.hs {
                             let vw = &self.vocab[word];
-                            for d in 0..vw.code.len() {
-                                let l2 = vw.point[d] as usize * layer1_size;
+                            for d in 0..vw.decision_path.len() {
+                                let l2 = vw.decision_indexes[d] as usize * layer1_size;
                                 // Propagate hidden -> output
                                 let f = (0..layer1_size)
                                     .map(|c| neu1[c] * self.weights[c + l2].get())
@@ -707,7 +707,7 @@ impl Word3Vec {
                                 let f = self.sigmoid(f);
 
                                 // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                                let g = ((1 - vw.code[d]) as real - f) * alpha;
+                                let g = ((1 - vw.decision_path[d]) as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
                                     neu1e[c] += g * self.weights[c + l2].get();
@@ -789,9 +789,9 @@ impl Word3Vec {
                         neu1e.fill(0.0);
                         // HIERARCHICAL SOFTMAX
                         if self.options.hs {
-                            for d in 0..self.vocab[word].code.len() {
+                            for d in 0..self.vocab[word].decision_path.len() {
                                 // Propagate hidden -> output
-                                let l2 = self.vocab[word].point[d] as usize * layer1_size;
+                                let l2 = self.vocab[word].decision_indexes[d] as usize * layer1_size;
                                 let f = (0..layer1_size)
                                     .map(|c| {
                                         self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
@@ -804,7 +804,7 @@ impl Word3Vec {
                                 }
                                 let f = self.sigmoid(f);
                                 // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                                let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                                let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
                                     neu1e[c] += g * self.weights[c + l2].get();
@@ -949,7 +949,7 @@ impl Word3Vec {
             *word_count += 1;
             let sample = self.options.sample;
             if sample > 0.0 {
-                let f = self.vocab[word].cn as real;
+                let f = self.vocab[word].count as real;
                 let k = sample * self.train_words as real;
                 let ran = ((f / k).sqrt() + 1.0) * k / f;
                 if ran < rng.rand_real() {
@@ -998,9 +998,9 @@ impl Word3Vec {
                         emb_adjust.fill(0.0);
 
                         // Over predictors in the tree
-                        for d in 0..self.vocab[word].code.len() {
+                        for d in 0..self.vocab[word].decision_path.len() {
                             // Propagate hidden -> output
-                            let l2 = self.vocab[word].point[d] as usize * dim;
+                            let l2 = self.vocab[word].decision_indexes[d] as usize * dim;
                             let f = (0..dim)
                                 .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
                                 .sum::<real>();
@@ -1009,7 +1009,7 @@ impl Word3Vec {
                             }
                             let f = self.sigmoid(f);
                             // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                            let g = (1.0 - self.vocab[word].code[d] as real - f) * alpha;
+                            let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
                             // Propagate errors output -> hidden
                             for c in 0..dim {
                                 emb_adjust[c] += g * self.weights[l2 + c].get();

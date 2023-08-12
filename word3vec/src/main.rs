@@ -12,6 +12,7 @@ use std::{iter, process, slice, thread};
 use aligned_box::AlignedBox;
 use anyhow::{Context, Result};
 use clap::Parser;
+use serde::{Serialize, Deserialize};
 
 const MAX_STRING: usize = 100;
 const EXP_TABLE_SIZE: usize = 1000;
@@ -24,6 +25,7 @@ const VOCAB_HASH_SIZE: usize = 30000000; // Maximum 30 * 0.7 = 21M words in the 
 #[allow(non_camel_case_types)]
 type real = f32; // Precision of float numbers
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct VocabWord {
     cn: u64,
     point: Vec<u32>,
@@ -89,8 +91,12 @@ struct Options {
     debug_mode: usize,
 
     /// Save the resulting vectors in binary mode
-    #[arg(long)]
+    #[arg(long, group = "format")]
     binary: bool,
+
+    /// Save the model in bincode format
+    #[arg(long, group = "format")]
+    bincode: bool,
 
     /// The vocabulary will be saved to FILE
     #[arg(long = "save-vocab", value_name = "FILE")]
@@ -158,6 +164,13 @@ struct Word3Vec {
     exp_table: Vec<real>,
     start: Instant,
     table: Vec<usize>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Model {
+    vocab: Vec<VocabWord>,
+    embeddings: Vec<f32>,
+    weights: Vec<f32>,
 }
 
 const TABLE_SIZE: usize = 100_000_000;
@@ -891,20 +904,28 @@ impl Word3Vec {
         match self.options.classes {
             None => {
                 // Save the word vectors
-                writeln!(fo, "{} {}", vocab_size, layer1_size)?;
-                for (a, vw) in self.vocab.iter().enumerate() {
-                    write!(fo, "{} ", vw.word).context("error writing output file")?;
-                    let word_vec = &self.syn0[a * layer1_size..][..layer1_size];
-                    if self.options.binary {
-                        let word_vec = word_vec.iter().map(Real::get).collect::<Vec<real>>();
-                        fo.write_all(bytemuck::cast_slice::<real, u8>(&word_vec))
-                            .context("error writing output file")?;
-                    } else {
-                        for f in word_vec {
-                            write!(fo, "{} ", f.get()).context("error writing output file")?;
+                if self.options.bincode {
+                    bincode::serialize_into(fo, &Model {
+                        vocab: self.vocab.clone(),
+                        embeddings: self.syn0.iter().map(Real::get).collect::<Vec<real>>(),
+                        weights: self.syn1.iter().map(Real::get).collect::<Vec<real>>(),
+                    })?;
+                } else {
+                    writeln!(fo, "{} {}", vocab_size, layer1_size)?;
+                    for (a, vw) in self.vocab.iter().enumerate() {
+                        write!(fo, "{} ", vw.word).context("error writing output file")?;
+                        let word_vec = &self.syn0[a * layer1_size..][..layer1_size];
+                        if self.options.binary {
+                            let word_vec = word_vec.iter().map(Real::get).collect::<Vec<real>>();
+                            fo.write_all(bytemuck::cast_slice::<real, u8>(&word_vec))
+                                .context("error writing output file")?;
+                        } else {
+                            for f in word_vec {
+                                write!(fo, "{} ", f.get()).context("error writing output file")?;
+                            }
                         }
+                        writeln!(fo).context("error writing output file")?;
                     }
-                    writeln!(fo).context("error writing output file")?;
                 }
             }
             Some(classes) => {

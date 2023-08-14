@@ -168,9 +168,12 @@ struct Word3Vec {
 
 #[derive(Serialize, Deserialize)]
 struct Model {
+    size: usize,
+    sample: real,
+    window: usize,
     vocab: Vec<VocabWord>,
-    embeddings: Vec<f32>,
-    weights: Vec<f32>,
+    embeddings: Vec<real>,
+    weights: Vec<real>,
 }
 
 const TABLE_SIZE: usize = 100_000_000;
@@ -530,7 +533,7 @@ impl Word3Vec {
         self.syn0 = AlignedBox::slice_from_default(128, vocab_size * layer1_size)
             .expect("Memory allocation failed");
         if self.options.hs {
-            self.syn1 = AlignedBox::slice_from_default(128, vocab_size * layer1_size)
+            self.syn1 = AlignedBox::slice_from_default(128, (vocab_size - 1) * layer1_size)
                 .expect("Memory allocation failed");
         }
         if self.options.negative > 0 {
@@ -906,6 +909,9 @@ impl Word3Vec {
                 // Save the word vectors
                 if self.options.bincode {
                     bincode::serialize_into(fo, &Model {
+                        size: layer1_size,
+                        sample: self.options.sample,
+                        window: self.options.window,
                         vocab: self.vocab.clone(),
                         embeddings: self.syn0.iter().map(Real::get).collect::<Vec<real>>(),
                         weights: self.syn1.iter().map(Real::get).collect::<Vec<real>>(),

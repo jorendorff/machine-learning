@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::{self, Read, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::{process, slice};
+use std::ops::Range;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -50,6 +51,11 @@ struct Options {
     /// is 1e-3, useful range is (0, 1e-5)
     #[arg(long, default_value_t = 1e-3)]
     sample: real,
+
+    /// Set max skip length between words
+    #[arg(long, default_value_t = 5)]
+    window: usize,
+
 }
 
 fn sigmoid(x: real) -> real {
@@ -76,7 +82,7 @@ impl Model {
     }
 
     /// Estimate P(b|a), the probability that a word in the context of `a` is `b`.
-    /// (If we want to compute the probability for every b, it'd cheaper to do it in bulk.)
+    /// (Since we compute the probability for every b, it'd cheaper to do it in bulk. Oops.)
     #[allow(dead_code)]
     fn predict(&self, a: usize, b: usize) -> real {
         let size = self.size();
@@ -234,19 +240,80 @@ impl<'a> Iterator for SentenceReader<'a> {
     }
 }
 
+fn window_around(i: usize, window: usize, len: usize) -> Range<usize> {
+    let start = i.saturating_sub(window);
+    let stop = (i + window + 1).min(len);
+    start..stop
+}
+
 fn evaluate_model(options: Options) -> Result<()> {
     let model = Model::load(&options.model_file)?;
 
-    // Compute observed joint frequencies
+    // Compute observed joint frequencies.
+    //
+    // The goal is to produce `freq`, a sparse square matrix such that `freq[a][b]` = the frequency
+    // of b among a's neighbors. Each row freq[a] sums to neighbors[a], up to f32 rounding.
+    //
+    // Each occurrence of a word `b` near `a` is weighted in proportion to how often word2vec would
+    // sample that word pair -- it only samples pairs at distance `option.window` or less, and
+    // samples them more the closer together they are.
+    let mut freq: Vec<HashMap<u32, f32>> = vec![HashMap::new(); model.vocab.len()];
+    // For each word `a`, `neighbors[a]` is the total weight of a's neighbors in the entire data set.
+    let mut neighbors: Vec<f32> = vec![0.0; model.vocab.len()];
+    let radius = options.window;
+    let fraction = 1.0 / (radius * (radius + 1)) as real;
+
     let sentence_reader = SentenceReader::open(&options, &model)?;
     for sentence in sentence_reader {
-        let _sentence = sentence?;
-        // TODO accumulate stats
+        let sentence = sentence?;
+        for (i, &a) in sentence.iter().enumerate() {
+            let window = window_around(i, options.window, sentence.len());
+            for j in window {
+                if i != j {
+                    let b = sentence[j];
+                    let weight = (radius + 1 - i.abs_diff(j)) as f32 * fraction;
+                    *freq[a].entry(b as u32).or_insert(0.0) += weight;
+                    neighbors[a] += weight;
+                }
+            }
+        }
     }
 
-    // TODO: compute predicted conditional probabilities
+    // Compare them to predicted conditional probabilities.
+    // For each row, we have two probability distributions: `freq[a]` and `model.predict(a)`.
+    // Similarity is computed using the dot product.
+    let mut sum_sim = 0.0;
+    let mut vfa = vec![0.0; model.vocab.len()];
+    let mut vpa = vec![0.0; model.vocab.len()];
+    for (a, fa) in freq.into_iter().enumerate() {
+        if a == 0 {
+            // Ignore the end-of-sentence marker.
+            continue;
+        }
 
-    // TODO: compare and compute accuracy
+        let mut sum_f2 = 0.0;
+        vfa.fill(0.0);
+        for (b, f) in fa {
+            sum_f2 += f * f;
+            vfa[b as usize] = f;
+        }
+
+        let mut sum_p2 = 0.0;
+        for (b, out) in vpa.iter_mut().enumerate() {
+            let p = model.predict(a, b);
+            sum_p2 += p * p;
+            *out = p;
+        }
+
+        let similarity = dot(&vfa, &vpa) / (sum_f2.sqrt() * sum_p2.sqrt());
+        println!("{:15} - {similarity:?}", model.vocab[a].word);
+        sum_sim += similarity;
+    }
+
+    // Scale q to a percentage of the maximum possible score, which would be obtained if every row
+    // matched the observed frequencies exactly, producing a dot product of 1 for each row.
+    let grade = 100.0 * sum_sim / model.vocab.len() as f32;
+    println!("Model quality: {grade:?}%");
 
     Ok(())
 }

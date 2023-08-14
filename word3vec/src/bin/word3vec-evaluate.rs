@@ -52,6 +52,15 @@ struct Options {
     sample: real,
 }
 
+fn sigmoid(x: real) -> real {
+    1.0 / (1.0 + (-x).exp())
+}
+
+fn dot(a: &[real], b: &[real]) -> real {
+    assert_eq!(a.len(), b.len());
+    a.iter().zip(b.iter()).map(|(&a, &b)| a * b).sum()
+}
+
 impl Model {
     fn load(filename: &Path) -> Result<Self> {
         let f = BufReader::new(
@@ -60,6 +69,27 @@ impl Model {
         );
         bincode::deserialize_from(f)
             .with_context(|| format!("failed to load model from file {filename:?}"))
+    }
+
+    fn size(&self) -> usize {
+        self.embeddings.len() / self.vocab.len()
+    }
+
+    /// Estimate P(b|a), the probability that a word in the context of `a` is `b`.
+    /// (If we want to compute the probability for every b, it'd cheaper to do it in bulk.)
+    #[allow(dead_code)]
+    fn predict(&self, a: usize, b: usize) -> real {
+        let size = self.size();
+        let va = &self.embeddings[a * size..][..size];
+        let point = &self.vocab[b].point;
+        let code = &self.vocab[b].code;
+        assert_eq!(point.len(), code.len());
+        let mut p: real = 1.0;
+        for (&node, &dir) in point.iter().zip(code.iter()) {
+            let sign = if dir == 0 { 1.0 } else { -1.0 };
+            p *= sigmoid(sign * dot(va, &self.weights[node as usize * size..][..size]));
+        }
+        p
     }
 }
 

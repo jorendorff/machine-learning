@@ -42,7 +42,7 @@ struct Options {
 
     /// Use FILE to save the resulting word vectors / word clusters
     #[arg(long = "output", value_name = "FILE")]
-    output_file: Option<PathBuf>,
+    output_file: PathBuf,
 
     /// Set size of word vectors; default is 100
     #[arg(long = "size", default_value_t = 100)]
@@ -867,10 +867,6 @@ impl Word3Vec {
         if let Some(f) = &self.options.save_vocab_file {
             self.save_vocab(f)?;
         }
-        let output_file = match self.options.output_file.clone() {
-            Some(f) => f,
-            None => return Ok(()),
-        };
         self.init_net();
         if self.options.negative > 0 {
             self.init_unigram_table();
@@ -891,6 +887,12 @@ impl Word3Vec {
             });
         }
 
+        self.save_output(&self.options.output_file)?;
+
+        Ok(())
+    }
+
+    fn save_output(&self, output_file: &Path) -> Result<()> {
         let mut fo =
             BufWriter::new(File::create(output_file).context("error creating output file")?);
         let vocab_size = self.vocab.len();

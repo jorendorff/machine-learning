@@ -567,7 +567,7 @@ impl Word3Vec {
         }
     }
 
-    fn train_model_thread(&self, id: usize) -> Result<()> {
+    fn train_model_thread(&self, id: usize, epoch: usize) -> Result<()> {
         let window = self.options.window;
 
         let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
@@ -581,8 +581,10 @@ impl Word3Vec {
 
         let layer1_size = self.options.layer1_size;
 
-        let mut rng = Rng(id as u64);
-        let mut alpha = self.starting_alpha;
+        let mut rng = Rng((id + epoch * self.options.num_threads) as u64);
+        let num_epochs = self.options.iter;
+        let epoch_starting_alpha = self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
+        let mut alpha = epoch_starting_alpha;
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
@@ -605,7 +607,7 @@ impl Word3Vec {
                     );
                     let _ = io::stdout().flush();
                 }
-                alpha = self.starting_alpha
+                alpha = epoch_starting_alpha
                     * (1.0
                         - word_count_actual as real
                             / (self.options.iter as u64 * self.train_words + 1) as real)
@@ -878,11 +880,11 @@ impl Word3Vec {
         }
         self.start = Instant::now();
 
-        for epoch_num in 0..self.options.iter {
+        for epoch in 0..self.options.iter {
             thread::scope(|s| {
                 let this: &Word3Vec = self;
                 let threads = (0..this.options.num_threads)
-                    .map(|a| s.spawn(move || this.train_model_thread(a)))
+                    .map(|a| s.spawn(move || this.train_model_thread(a, epoch)))
                     .collect::<Vec<_>>();
                 for thread in threads {
                     if let Err(err) = thread.join().unwrap() {
@@ -892,7 +894,7 @@ impl Word3Vec {
             });
 
             if self.options.dump_epochs {
-                let output_file = self.output_file_for_epochs(epoch_num + 1);
+                let output_file = self.output_file_for_epochs(epoch + 1);
                 self.save_output(&output_file)?;
             }
         }

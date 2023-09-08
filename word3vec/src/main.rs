@@ -40,6 +40,11 @@ struct Options {
     #[arg(long = "train", value_name = "FILE")]
     train_file: PathBuf,
 
+    /// Dump the model after each epoch instead of just at the end.
+    /// The --output filename will be modified by adding `-1`, `-2`, etc.
+    #[arg(long)]
+    dump_epochs: bool,
+
     /// Use FILE to save the resulting word vectors / word clusters
     #[arg(long = "output", value_name = "FILE")]
     output_file: PathBuf,
@@ -873,7 +878,7 @@ impl Word3Vec {
         }
         self.start = Instant::now();
 
-        for _epoch_num in 0..self.options.iter {
+        for epoch_num in 0..self.options.iter {
             thread::scope(|s| {
                 let this: &Word3Vec = self;
                 let threads = (0..this.options.num_threads)
@@ -885,11 +890,32 @@ impl Word3Vec {
                     }
                 }
             });
+
+            if self.options.dump_epochs {
+                let output_file = self.output_file_for_epochs(epoch_num + 1);
+                self.save_output(&output_file)?;
+            }
         }
 
-        self.save_output(&self.options.output_file)?;
+        if !self.options.dump_epochs {
+            self.save_output(&self.options.output_file)?;
+        }
 
         Ok(())
+    }
+
+    fn output_file_for_epochs(&self, num_epochs: usize) -> PathBuf {
+        let ext = self.options.output_file.extension();
+
+        let mut output_file = self.options.output_file.clone();
+        output_file.set_extension("");
+
+        output_file.as_mut_os_string().push(format!("-{num_epochs}"));
+
+        if let Some(ext) = ext {
+            output_file.set_extension(ext);
+        }
+        output_file
     }
 
     fn save_output(&self, output_file: &Path) -> Result<()> {

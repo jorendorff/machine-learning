@@ -11,15 +11,15 @@ fi
 
 cargo build --release
 
-for n in 1 3 5; do
-    time target/release/word3vec \
-         --train text8 \
-         --output vectors-$n.bincode \
-         --size=200 \
-         --window=8 \
-         --hs \
-         --sample=1e-4 \
-         --threads=20 \
-         --bincode \
-         --iter=$n
-done
+time target/release/word3vec \
+     --train text8 \
+     --output vectors.bincode \
+     --size=200 \
+     --window=8 \
+     --hs \
+     --sample=1e-4 \
+     --threads=20 \
+     --bincode \
+     --iter=5 \
+     --dump-epochs
+

@@ -578,7 +578,6 @@ impl Word3Vec {
 
         let mut rng = Rng(id as u64);
         let mut alpha = self.starting_alpha;
-        let mut local_iter = self.options.iter;
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH + 1);
@@ -648,18 +647,7 @@ impl Word3Vec {
             if at_end_of_file || word_count > self.train_words / self.options.num_threads as u64 {
                 self.word_count_actual
                     .fetch_add(word_count - last_word_count, Ordering::Relaxed);
-                local_iter -= 1;
-                if local_iter == 0 {
-                    break;
-                }
-                word_count = 0;
-                last_word_count = 0;
-                sen.clear();
-                fi.seek(SeekFrom::Start(
-                    self.file_size / self.options.num_threads as u64 * id as u64,
-                ))
-                .context("error rewinding file for next iteration")?;
-                continue;
+                break;
             }
 
             let word = sen[sentence_position];
@@ -888,17 +876,20 @@ impl Word3Vec {
             self.init_unigram_table();
         }
         self.start = Instant::now();
-        thread::scope(|s| {
-            let this: &Word3Vec = self;
-            let threads = (0..this.options.num_threads)
-                .map(|a| s.spawn(move || this.train_model_thread(a)))
-                .collect::<Vec<_>>();
-            for thread in threads {
-                if let Err(err) = thread.join().unwrap() {
-                    eprintln!("Error in worker thread: {err:#}");
+
+        for _epoch_num in 0..self.options.iter {
+            thread::scope(|s| {
+                let this: &Word3Vec = self;
+                let threads = (0..this.options.num_threads)
+                    .map(|a| s.spawn(move || this.train_model_thread(a)))
+                    .collect::<Vec<_>>();
+                for thread in threads {
+                    if let Err(err) = thread.join().unwrap() {
+                        eprintln!("Error in worker thread: {err:#}");
+                    }
                 }
-            }
-        });
+            });
+        }
 
         let mut fo =
             BufWriter::new(File::create(output_file).context("error creating output file")?);

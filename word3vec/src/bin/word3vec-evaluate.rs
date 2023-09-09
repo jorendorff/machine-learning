@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, ErrorKind, Read};
+use std::io::{self, BufReader, ErrorKind, Read, Seek};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::{process, slice};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use indicatif::{ProgressBar, ProgressStyle, ProgressState};
 
 // copied from word3vec/src/main.rs
 const MAX_SENTENCE_LENGTH: usize = 1000;
@@ -51,7 +53,7 @@ struct Options {
     model_file: PathBuf,
 
     /// how much of the vocabulary to use in computing the score (useful range: 0.001 to 1.0)
-    #[arg(long, default_value_t=0.01)]
+    #[arg(long, default_value_t = 0.01)]
     sample_rate: real,
 }
 
@@ -330,6 +332,7 @@ impl Rng {
 struct SentenceReader<'a> {
     model: &'a Model,
     file: BufReader<File>,
+    file_len: u64,
     vocab_hash: HashMap<String, usize>,
     train_words: u64,
     rng: Rng,
@@ -381,14 +384,18 @@ fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
 impl<'a> SentenceReader<'a> {
     fn open(options: &Options, model: &'a Model) -> Result<Self> {
         let filename = &options.train_file;
-        let file = BufReader::new(
-            File::open(filename)
-                .with_context(|| format!("failed to open raining file {filename:?}"))?,
-        );
+        let file = File::open(filename)
+            .with_context(|| format!("failed to open training file {filename:?}"))?;
+        let file_len = file
+            .metadata()
+            .with_context(|| format!("failed to get length of training file {filename:?}"))?
+            .len();
+        let file = BufReader::new(file);
 
         Ok(SentenceReader {
             model,
             file,
+            file_len,
             vocab_hash: model
                 .vocab
                 .iter()
@@ -398,6 +405,10 @@ impl<'a> SentenceReader<'a> {
             train_words: model.vocab.iter().map(|vw| vw.cn).sum(),
             rng: Rng(1),
         })
+    }
+
+    fn stream_position(&mut self) -> Result<u64> {
+        Ok(self.file.stream_position()?)
     }
 
     /// Reads a word and returns its index in the vocabulary
@@ -460,12 +471,16 @@ fn evaluate_model(options: Options) -> Result<()> {
     let model = Model::load(&options.model_file)?;
 
     let mut rng = Rng(1);
-    let mut is_selected: Vec<bool> =
-        (0..model.vocab.len()).map(|_| rng.rand_real() < options.sample_rate)
+    let mut is_selected: Vec<bool> = (0..model.vocab.len())
+        .map(|_| rng.rand_real() < options.sample_rate)
         .collect();
     is_selected[0] = false; // never care about the end-of-sentence marker
     let num_words_selected = is_selected.iter().filter(|&&x| x).count();
-    anyhow::ensure!(num_words_selected > 0, "sample rate {} is too low: no words selected", options.sample_rate);
+    anyhow::ensure!(
+        num_words_selected > 0,
+        "sample rate {} is too low: no words selected",
+        options.sample_rate
+    );
 
     // Compute observed joint frequencies.
     //
@@ -482,8 +497,11 @@ fn evaluate_model(options: Options) -> Result<()> {
     let fraction = 1.0 / (radius * (radius + 1)) as real;
 
     println!("Computing observed joint frequencies...");
-    let sentence_reader = SentenceReader::open(&options, &model)?;
-    for sentence in sentence_reader {
+    let mut sentence_reader = SentenceReader::open(&options, &model)?;
+    let pb = ProgressBar::new(sentence_reader.file_len);
+    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {bytes}/{total_bytes}")
+        .unwrap());
+    while let Some(sentence) = sentence_reader.next() {
         let sentence = sentence?;
         for (i, &a) in sentence.iter().enumerate() {
             if is_selected[a] {
@@ -498,8 +516,9 @@ fn evaluate_model(options: Options) -> Result<()> {
                 }
             }
         }
+        pb.set_position(sentence_reader.stream_position()?);
     }
-    println!("done.");
+    pb.finish_with_message("done");
 
     // Compare them to predicted conditional probabilities.
     // For each row, we have two probability distributions: `freq[a]` and `model.predict(a)`.
@@ -507,6 +526,17 @@ fn evaluate_model(options: Options) -> Result<()> {
     let mut sum_sim = 0.0;
     let mut vfa = vec![0.0; model.vocab.len()];
     let mut predictor = Predictor::new(&model);
+    let latest_word = Arc::new(Mutex::new(String::new()));
+    let pb = ProgressBar::new(model.vocab.len() as u64);
+    let pb_latest_word = Arc::clone(&latest_word);
+    pb.set_style(
+        ProgressStyle::with_template("[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {pos}/{len} {latest_word}")
+            .unwrap()
+            .with_key("latest_word", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+                let guard = pb_latest_word.lock().unwrap();
+                write!(w, "{}", &guard as &str).unwrap();
+            })
+    );
     for (a, fa) in freq.into_iter().enumerate() {
         if is_selected[a] {
             vfa.fill(0.0);
@@ -520,10 +550,15 @@ fn evaluate_model(options: Options) -> Result<()> {
             let sum_p2 = dot(vpa, vpa);
 
             let similarity = dot(&vfa, vpa) / (sum_f2.sqrt() * sum_p2.sqrt());
-            println!("{a:8} {:>15} - {similarity:?}", model.vocab[a].word);
+            {
+                let mut guard = latest_word.lock().unwrap();
+                *guard = format!("{:>15} - {similarity:6.4?}", model.vocab[a].word);
+            }
             sum_sim += similarity;
         }
+        pb.set_position(a as u64);
     }
+    pb.finish_with_message("done");
 
     // Scale q to a percentage of the maximum possible score, which would be obtained if every row
     // matched the observed frequencies exactly, producing a dot product of 1 for each row.

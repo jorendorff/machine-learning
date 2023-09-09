@@ -20,6 +20,6 @@ time target/release/word3vec \
      --sample=1e-4 \
      --threads=20 \
      --bincode \
-     --iter=5 \
+     --iter=15 \
      --dump-epochs
 

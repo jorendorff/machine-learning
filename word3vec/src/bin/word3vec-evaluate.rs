@@ -362,6 +362,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use std::cmp::Reverse;
+    use word3vec::VocabWord;
 
     use super::*;
 
@@ -370,7 +371,7 @@ mod tests {
             .map(|_| char::from(b'a' + (rng.rand_u64() % 26) as u8))
             .collect::<String>();
         VocabWord {
-            cn: (10.0 * rng.rand_real()).exp().max(5.0).floor() as u64,
+            count: (10.0 * rng.rand_real()).exp().max(5.0).floor() as u64,
             decision_indexes: vec![],
             word,
             decision_path: vec![],

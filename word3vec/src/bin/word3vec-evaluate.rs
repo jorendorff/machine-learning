@@ -1,45 +1,18 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, ErrorKind, Read, Seek};
+use std::io::{BufReader, Seek};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
-use std::{process, slice};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::{process};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
-use indicatif::{ProgressBar, ProgressStyle, ProgressState};
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 
-// copied from word3vec/src/bin/word3vec.rs
-const MAX_SENTENCE_LENGTH: usize = 1000;
-
-// copied from word3vec/src/bin/word3vec.rs
-const MAX_STRING: usize = 100;
-
-// copied from word3vec/src/bin/word3vec.rs
-#[allow(non_camel_case_types)]
-type real = f32; // Precision of float numbers
-
-// copied from word3vec/src/bin/word3vec.rs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct VocabWord {
-    count: u64,
-    word: String,
-    decision_indexes: Vec<u32>,
-    decision_path: Vec<u8>,
-}
-
-// copied from word3vec/src/bin/word3vec.rs
-#[derive(Debug, Serialize, Deserialize)]
-struct Model {
-    size: usize,
-    sample: real,
-    window: usize,
-    vocab: Vec<VocabWord>,
-    embeddings: Vec<real>,
-    weights: Vec<real>,
-}
+use word3vec::{
+    dot, read_word, real, sigmoid, Model, Rng, MAX_SENTENCE_LENGTH,
+};
 
 #[derive(Parser)]
 #[command(about = "evaluate model predicted probabilities against observed joint frequences", long_about = None)]
@@ -54,146 +27,6 @@ struct Options {
     /// how much of the vocabulary to use in computing the score (useful range: 0.001 to 1.0)
     #[arg(long, default_value_t = 0.01)]
     sample_rate: real,
-}
-
-fn sigmoid(x: real) -> real {
-    1.0 / (1.0 + (-x).exp())
-}
-
-fn dot(a: &[real], b: &[real]) -> real {
-    assert_eq!(a.len(), b.len());
-    a.iter().zip(b.iter()).map(|(&a, &b)| a * b).sum()
-}
-
-impl Model {
-    fn load(filename: &Path) -> Result<Self> {
-        let f = BufReader::new(
-            File::open(filename)
-                .with_context(|| format!("failed to open model file {filename:?}"))?,
-        );
-        let model: Model = bincode::deserialize_from(f)
-            .with_context(|| format!("failed to load model from file {filename:?}"))?;
-
-        let nwords = model.vocab.len();
-        let size = model.size;
-        anyhow::ensure!(nwords >= 2, "invalid model: no words");
-        anyhow::ensure!(
-            model.vocab[0].word == "</s>",
-            "invalid model: end-of-sentence marker missing"
-        );
-
-        anyhow::ensure!(
-            model.embeddings.len() == nwords * size,
-            "invalid model: length of embeddings array {} must be number of words in vocab {nwords} times embedding size {size}",
-            model.embeddings.len(),
-        );
-        anyhow::ensure!(
-            model.weights.len() == (nwords - 1) * size,
-            "invalid model: length of weights array {} must be number of tree nodes {} times embedding size {size}",
-            model.weights.len(),
-            nwords - 1,
-        );
-        for vw in &model.vocab {
-            anyhow::ensure!(vw.decision_indexes.len() == vw.decision_path.len());
-            for i in 0..vw.decision_indexes.len() - 1 {
-                anyhow::ensure!(
-                    vw.decision_indexes[i] > vw.decision_indexes[i + 1],
-                    "paths must be strictly decreasing"
-                );
-            }
-        }
-
-        Ok(model)
-    }
-
-    /// Estimate P(b|a), the probability that a word in the context of `a` is `b`.
-    /// (Since we compute the probability for every b, it's cheaper to do it in bulk;
-    /// see `Predictor` below)
-    #[allow(dead_code)]
-    fn predict(&self, a: usize, b: usize) -> real {
-        let size = self.size;
-        let va = &self.embeddings[a * size..][..size];
-        let point = &self.vocab[b].decision_indexes;
-        let code = &self.vocab[b].decision_path;
-        assert_eq!(point.len(), code.len());
-        let mut p: real = 1.0;
-        for (&node, &dir) in point.iter().zip(code.iter()) {
-            let left = sigmoid(dot(va, &self.weights[node as usize * size..][..size]));
-            p *= if dir == 0 { left } else { 1.0 - left };
-        }
-        p
-    }
-
-    // Create binary Huffman tree using the word counts.
-    // Frequent words will have short unique binary codes.
-    //
-    // copied from word3vec/src/bin/word3vec.rs
-    #[cfg(test)]
-    #[allow(clippy::needless_range_loop)]
-    fn create_binary_tree(&mut self) {
-        let vocab_size = self.vocab.len();
-        let mut count = vec![0u64; vocab_size * 2 + 1];
-        let mut binary = vec![0u8; vocab_size * 2 + 1]; // which child a node is of its parent (0 or 1)
-        let mut parent_node = vec![0usize; vocab_size * 2 + 1];
-
-        for a in 0..vocab_size {
-            count[a] = self.vocab[a].count;
-        }
-        for a in vocab_size..(vocab_size * 2) {
-            count[a] = 1_000_000_000_000_000;
-        }
-
-        let mut pos1 = vocab_size;
-        let mut pos2 = vocab_size;
-        // Following algorithm constructs the Huffman tree by adding one node at a time
-        for a in 0..(vocab_size - 1) {
-            // First, find two smallest nodes 'min1, min2'
-            let min1i;
-            if pos1 > 0 && count[pos1 - 1] < count[pos2] {
-                pos1 -= 1;
-                min1i = pos1;
-            } else {
-                min1i = pos2;
-                pos2 += 1;
-            }
-
-            let min2i;
-            if pos1 > 0 && count[pos1 - 1] < count[pos2] {
-                pos1 -= 1;
-                min2i = pos1;
-            } else {
-                min2i = pos2;
-                pos2 += 1;
-            }
-
-            count[vocab_size + a] = count[min1i] + count[min2i];
-            parent_node[min1i] = vocab_size + a;
-            parent_node[min2i] = vocab_size + a;
-            binary[min2i] = 1;
-        }
-
-        // Now assign binary code to each vocabulary word
-        for a in 0..vocab_size {
-            let mut code: Vec<u8> = vec![];
-            let mut point: Vec<u32> = vec![];
-            let mut b = a;
-            loop {
-                if !code.is_empty() {
-                    point.push((b - vocab_size) as u32);
-                }
-                code.push(binary[b]);
-                b = parent_node[b];
-                if b == vocab_size * 2 - 2 {
-                    break;
-                }
-            }
-            code.reverse();
-            self.vocab[a].decision_path = code;
-            point.push((vocab_size - 2) as u32);
-            point.reverse();
-            self.vocab[a].decision_indexes = point;
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -312,22 +145,6 @@ impl<'a> Predictor<'a> {
     }
 }
 
-// copied from word3vec/src/bin/word3vec.rs
-struct Rng(u64);
-
-// copied from word3vec/src/bin/word3vec.rs
-impl Rng {
-    fn rand_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(25214903917).wrapping_add(11);
-        self.0
-    }
-
-    /// Get a uniformly distributed random number in `0.0 .. 1.0`.
-    fn rand_real(&mut self) -> real {
-        (self.rand_u64() & 0xFFFF) as real / 65536.0
-    }
-}
-
 struct SentenceReader<'a> {
     model: &'a Model,
     file: BufReader<File>,
@@ -335,49 +152,6 @@ struct SentenceReader<'a> {
     vocab_hash: HashMap<String, usize>,
     train_words: u64,
     rng: Rng,
-}
-
-// copied from word3vec/src/bin/word3vec.rs
-fn read_byte(fin: &mut BufReader<File>) -> Option<Result<u8, io::Error>> {
-    let mut byte = 0;
-    loop {
-        return match fin.read(slice::from_mut(&mut byte)) {
-            Ok(0) => None,
-            Ok(..) => Some(Ok(byte)),
-            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-            Err(e) => Some(Err(e)),
-        };
-    }
-}
-
-// Reads a single word from a file, assuming space + tab + EOL to be word boundaries
-// copied from word3vec/src/bin/word3vec.rs
-fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
-    let mut word = vec![];
-    loop {
-        let b = match read_byte(fin) {
-            None => return Ok(None),
-            Some(result) => result.context("error reading a word")?,
-        };
-
-        if b == b'\r' {
-            continue;
-        }
-        if b == b' ' || b == b'\t' || b == b'\n' {
-            if !word.is_empty() {
-                // Note: The original C code puts the whitespace character back.
-                return Ok(Some(String::from_utf8_lossy(&word).to_string()));
-            }
-            if b == b'\n' {
-                return Ok(Some("</s>".to_string()));
-            } else {
-                continue;
-            }
-        }
-        if word.len() < MAX_STRING - 2 {
-            word.push(b); // Truncate too long words
-        }
-    }
 }
 
 impl<'a> SentenceReader<'a> {
@@ -427,7 +201,7 @@ impl<'a> SentenceReader<'a> {
 impl<'a> Iterator for SentenceReader<'a> {
     type Item = Result<Vec<usize>>;
 
-    // partly copied from word3vec/src/bin/word3vec.rs
+    // TODO: This duplicates code in word3vec/src/bin/word3vec.rs.
     fn next(&mut self) -> Option<Result<Vec<usize>>> {
         let mut sen = vec![];
         loop {
@@ -498,8 +272,12 @@ fn evaluate_model(options: Options) -> Result<()> {
     println!("Computing observed joint frequencies...");
     let mut sentence_reader = SentenceReader::open(&options, &model)?;
     let pb = ProgressBar::new(sentence_reader.file_len);
-    pb.set_style(ProgressStyle::with_template("[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {bytes}/{total_bytes}")
-        .unwrap());
+    pb.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {bytes}/{total_bytes}",
+        )
+        .unwrap(),
+    );
     while let Some(sentence) = sentence_reader.next() {
         let sentence = sentence?;
         for (i, &a) in sentence.iter().enumerate() {
@@ -529,12 +307,17 @@ fn evaluate_model(options: Options) -> Result<()> {
     let pb = ProgressBar::new(model.vocab.len() as u64);
     let pb_latest_word = Arc::clone(&latest_word);
     pb.set_style(
-        ProgressStyle::with_template("[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {pos}/{len} {latest_word}")
-            .unwrap()
-            .with_key("latest_word", move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] [{wide_bar:.cyan/.blue}] {pos}/{len} {latest_word}",
+        )
+        .unwrap()
+        .with_key(
+            "latest_word",
+            move |_state: &ProgressState, w: &mut dyn std::fmt::Write| {
                 let guard = pb_latest_word.lock().unwrap();
                 write!(w, "{}", &guard as &str).unwrap();
-            })
+            },
+        ),
     );
     for (a, fa) in freq.into_iter().enumerate() {
         if is_selected[a] {

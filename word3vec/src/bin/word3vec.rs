@@ -3,35 +3,23 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Instant;
-use std::{iter, process, slice, thread};
+use std::{iter, process, thread};
 
 use aligned_box::AlignedBox;
 use anyhow::{Context, Result};
 use clap::Parser;
-use serde::{Serialize, Deserialize};
 
-const MAX_STRING: usize = 100;
+use word3vec::{MAX_STRING, MAX_SENTENCE_LENGTH, real, VocabWord, Model, Rng, read_word};
+
 const EXP_TABLE_SIZE: usize = 1000;
 const MAX_EXP: real = 6.0;
-const MAX_SENTENCE_LENGTH: usize = 1000;
 const MAX_CODE_LENGTH: usize = 40;
 
 const VOCAB_HASH_SIZE: usize = 30000000; // Maximum 30 * 0.7 = 21M words in the vocabulary
-
-#[allow(non_camel_case_types)]
-type real = f32; // Precision of float numbers
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct VocabWord {
-    count: u64,
-    word: String,
-    decision_indexes: Vec<u32>,
-    decision_path: Vec<u8>,
-}
 
 #[derive(Parser)]
 #[command(about = "WORD VECTOR estimation toolkit", long_about = None, version = "0.1d")]
@@ -138,20 +126,6 @@ impl Real {
     }
 }
 
-struct Rng(u64);
-
-impl Rng {
-    fn rand_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_mul(25214903917).wrapping_add(11);
-        self.0
-    }
-
-    /// Get a uniformly distributed random number in `0.0 .. 1.0`.
-    fn rand_real(&mut self) -> real {
-        (self.rand_u64() & 0xFFFF) as real / 65536.0
-    }
-}
-
 struct Word3Vec {
     options: Options,
     vocab: Vec<VocabWord>,
@@ -175,58 +149,7 @@ struct Word3Vec {
     training_sentences: Vec<Vec<Vec<usize>>>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Model {
-    size: usize,
-    sample: real,
-    window: usize,
-    vocab: Vec<VocabWord>,
-    embeddings: Vec<real>,
-    weights: Vec<real>,
-}
-
 const TABLE_SIZE: usize = 100_000_000;
-
-fn read_byte(fin: &mut BufReader<File>) -> Option<Result<u8, io::Error>> {
-    let mut byte = 0;
-    loop {
-        return match fin.read(slice::from_mut(&mut byte)) {
-            Ok(0) => None,
-            Ok(..) => Some(Ok(byte)),
-            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
-            Err(e) => Some(Err(e)),
-        };
-    }
-}
-
-// Reads a single word from a file, assuming space + tab + EOL to be word boundaries
-fn read_word(fin: &mut BufReader<File>) -> Result<Option<String>> {
-    let mut word = vec![];
-    loop {
-        let b = match read_byte(fin) {
-            None => return Ok(None),
-            Some(result) => result.context("error reading a word")?,
-        };
-
-        if b == b'\r' {
-            continue;
-        }
-        if b == b' ' || b == b'\t' || b == b'\n' {
-            if !word.is_empty() {
-                // Note: The original C code puts the whitespace character back.
-                return Ok(Some(String::from_utf8_lossy(&word).to_string()));
-            }
-            if b == b'\n' {
-                return Ok(Some("</s>".to_string()));
-            } else {
-                continue;
-            }
-        }
-        if word.len() < MAX_STRING - 2 {
-            word.push(b); // Truncate too long words
-        }
-    }
-}
 
 // Read words from a file, assuming space + tab + EOL to be word boundaries
 fn read_words(fin: File) -> impl Iterator<Item = Result<String, io::Error>> {
@@ -381,6 +304,9 @@ impl Word3Vec {
 
     // Create binary Huffman tree using the word counts.
     // Frequent words will have short unique binary codes.
+    //
+    // TODO: This duplicates code in lib.rs.
+    #[allow(clippy::needless_range_loop)]
     fn create_binary_tree(&mut self) {
         let vocab_size = self.vocab.len();
         let mut count = vec![0u64; vocab_size * 2 + 1];

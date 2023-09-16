@@ -1,7 +1,9 @@
 #![allow(unused_variables)]
 
+use anyhow::Context;
+
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()>{
     //let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
     //    backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY),
     //    dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
@@ -15,7 +17,8 @@ async fn main() {
 
     let adapter = instance
         .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .await.expect("failed to create wgpu adapter");
+        .await
+        .ok_or(anyhow::anyhow!("failed to create wgpu adapter"))?;
 
     let (device, queue) = adapter
         .request_device(
@@ -26,7 +29,7 @@ async fn main() {
             None,
         )
         .await
-        .expect("failed to create device");
+        .context("failed to create device")?;
 
     device.push_error_scope(wgpu::ErrorFilter::Validation);
 
@@ -66,7 +69,9 @@ async fn main() {
         image::ColorType::L8,
         image::ImageFormat::Png,
     )
-    .expect("error writing image");
+        .context("error writing image")?;
+
+    Ok(())
 }
 
 async fn map_slice<'a>(device: &wgpu::Device, slice: &wgpu::BufferSlice<'a>) -> wgpu::BufferView<'a> {

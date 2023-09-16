@@ -1,0 +1,13 @@
+[package]
+name = "hello-compute"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+pollster = "0.3"
+
+[dependencies.wgpu]
+git = "https://github.com/jimblandy/wgpu"
+branch = "const-expressions-2"

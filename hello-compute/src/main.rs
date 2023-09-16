@@ -35,9 +35,9 @@ fn main() {
         mapped_at_creation: false
     });
 
-    let module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("mandelbrot plotter"),
-        source: include_str!("mandelbrot.wgsl"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("mandelbrot.wgsl").into()),
     });
     
     if let Some(err) = pollster::block_on(device.pop_error_scope()) {

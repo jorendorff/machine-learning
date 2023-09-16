@@ -6,7 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pollster = "0.3"
+image = "0.24"
+tokio = { version = "1.32", features = ["full"] }
 
 [dependencies.wgpu]
 git = "https://github.com/jimblandy/wgpu"

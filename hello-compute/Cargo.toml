@@ -12,4 +12,4 @@ tokio = { version = "1.32", features = ["full"] }
 
 [dependencies.wgpu]
 git = "https://github.com/jimblandy/wgpu"
-branch = "const-expressions-2"
+branch = "machine-learning-omnibus"

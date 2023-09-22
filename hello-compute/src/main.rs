@@ -3,7 +3,7 @@
 use anyhow::Context;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()>{
+async fn main() -> anyhow::Result<()> {
     //let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
     //    backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY),
     //    dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
@@ -50,10 +50,65 @@ async fn main() -> anyhow::Result<()>{
         mapped_at_creation: false,
     });
 
+    const WORKGROUP_WIDTH: usize = 16;
+    const WORKGROUP_HEIGHT: usize = 16;
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("mandelbrot plotter"),
         source: wgpu::ShaderSource::Wgsl(include_str!("mandelbrot.wgsl").into()),
     });
+
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("mandelbrot compute pipeline"),
+        layout: None,
+        module: &module,
+        entry_point: "mandelbrot",
+    });
+
+    let bind_group_layout = pipeline.get_bind_group_layout(0);
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("pixel bind group"),
+        layout: &bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &storage_buffer,
+                offset: 0,
+                size: None,
+            }),
+        }],
+    });
+
+    let mut command_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("mandelbrot command encoder"),
+    });
+
+    {
+        let mut compute_pass = command_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: Some("mandelbrot compute pass"),
+            timestamp_writes: None,
+        });
+        compute_pass.set_pipeline(&pipeline);
+        compute_pass.set_bind_group(0, &bind_group, &[]);
+        compute_pass.dispatch_workgroups(
+            (WIDTH / WORKGROUP_WIDTH) as u32,
+            (HEIGHT / WORKGROUP_HEIGHT) as u32,
+            1,
+        );
+    }
+
+    command_encoder.copy_buffer_to_buffer(
+        &storage_buffer,
+        0,
+        &readback_buffer,
+        0,
+        (WIDTH * HEIGHT) as u64,
+    );
+
+    let command_buffer = command_encoder.finish();
+
+    let submission_index = queue.submit([command_buffer]);
+    wait_for_submitted_work(&device, &queue).await;
 
     if let Some(err) = device.pop_error_scope().await {
         panic!("error scope found something: {}", err);
@@ -69,12 +124,15 @@ async fn main() -> anyhow::Result<()>{
         image::ColorType::L8,
         image::ImageFormat::Png,
     )
-        .context("error writing image")?;
+    .context("error writing image")?;
 
     Ok(())
 }
 
-async fn map_slice<'a>(device: &wgpu::Device, slice: &wgpu::BufferSlice<'a>) -> wgpu::BufferView<'a> {
+async fn map_slice<'a>(
+    device: &wgpu::Device,
+    slice: &wgpu::BufferSlice<'a>,
+) -> wgpu::BufferView<'a> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
 
     slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -83,4 +141,16 @@ async fn map_slice<'a>(device: &wgpu::Device, slice: &wgpu::BufferSlice<'a>) -> 
     assert!(device.poll(wgpu::Maintain::Wait));
     receiver.await.unwrap().expect("map failed");
     slice.get_mapped_range()
+}
+
+async fn wait_for_submitted_work(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    queue.on_submitted_work_done(move || {
+        let _ = sender.send(());
+    });
+    assert!(device.poll(wgpu::Maintain::Wait));
+    receiver.await.unwrap();
 }

@@ -4,21 +4,15 @@ use anyhow::Context;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    //let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-    //    backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY),
-    //    dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
-    //    gles_minor_version: wgpu::util::gles_minor_version_from_env().unwrap_or_default(),
-    //});
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY),
+        dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
+        gles_minor_version: wgpu::util::gles_minor_version_from_env().unwrap_or_default(),
+    });
 
-    let instance = wgpu::Instance::default();
-
-    //let adapter = wgpu::util::initialize_adapter_from_env(&instance, None)
-    //    .expect("Couldn't create webgpu adapter");
-
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
+    let adapter = wgpu::util::initialize_adapter_from_env_or_default(&instance, None)
         .await
-        .ok_or(anyhow::anyhow!("failed to create wgpu adapter"))?;
+        .expect("Couldn't create webgpu adapter");
 
     let (device, queue) = adapter
         .request_device(

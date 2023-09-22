@@ -35,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     const WIDTH: usize = 1024;
     const HEIGHT: usize = 1024;
+    const PACK_FACTOR: usize = 4;
 
     let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("mandelbrot pixels"),
@@ -56,6 +57,11 @@ async fn main() -> anyhow::Result<()> {
         label: Some("mandelbrot plotter"),
         source: wgpu::ShaderSource::Wgsl(include_str!("mandelbrot.wgsl").into()),
     });
+
+    if let Some(err) = device.pop_error_scope().await {
+        panic!("error scope found something: {}", err);
+    }
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
 
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("mandelbrot compute pipeline"),
@@ -91,8 +97,8 @@ async fn main() -> anyhow::Result<()> {
         compute_pass.set_pipeline(&pipeline);
         compute_pass.set_bind_group(0, &bind_group, &[]);
         compute_pass.dispatch_workgroups(
-            (WIDTH / WORKGROUP_WIDTH) as u32,
-            (HEIGHT / WORKGROUP_HEIGHT) as u32,
+            (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32 - 1, // -1 for debugging
+            (HEIGHT / WORKGROUP_HEIGHT) as u32 - 1,
             1,
         );
     }

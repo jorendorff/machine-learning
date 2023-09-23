@@ -91,8 +91,8 @@ async fn main() -> anyhow::Result<()> {
         compute_pass.set_pipeline(&pipeline);
         compute_pass.set_bind_group(0, &bind_group, &[]);
         compute_pass.dispatch_workgroups(
-            (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32 - 1, // -1 for debugging
-            (HEIGHT / WORKGROUP_HEIGHT) as u32 - 1,
+            (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32,
+            (HEIGHT / WORKGROUP_HEIGHT) as u32,
             1,
         );
     }

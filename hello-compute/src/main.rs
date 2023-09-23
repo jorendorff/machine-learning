@@ -143,10 +143,7 @@ async fn map_slice<'a>(
     slice.get_mapped_range()
 }
 
-async fn wait_for_submitted_work(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-) {
+async fn wait_for_submitted_work(device: &wgpu::Device, queue: &wgpu::Queue) {
     let (sender, receiver) = tokio::sync::oneshot::channel();
     queue.on_submitted_work_done(move || {
         let _ = sender.send(());

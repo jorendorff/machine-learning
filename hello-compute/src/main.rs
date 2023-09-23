@@ -2,6 +2,12 @@
 
 use anyhow::Context;
 
+#[repr(C)]
+struct Rectangle {
+    top_left: [f32; 2],
+    bottom_right: [f32; 2],
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -38,6 +44,13 @@ async fn main() -> anyhow::Result<()> {
         mapped_at_creation: false,
     });
 
+    let bounds_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("viewport bounds"),
+        size: std::mem::size_of::<Rectangle>() as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+
     let readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("readback buffer"),
         size: (WIDTH * HEIGHT).try_into().unwrap(),
@@ -69,14 +82,24 @@ async fn main() -> anyhow::Result<()> {
     let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("pixel bind group"),
         layout: &bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &storage_buffer,
-                offset: 0,
-                size: None,
-            }),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &storage_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &bounds_buffer,
+                    offset: 0,
+                    size: None,
+                }),
+            },
+        ],
     });
 
     let mut command_encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -107,6 +130,13 @@ async fn main() -> anyhow::Result<()> {
 
     let command_buffer = command_encoder.finish();
 
+    let rect = Rectangle {
+        top_left: [-1.0, -1.0],
+        bottom_right: [0.0, 0.0],
+    };
+    queue.write_buffer(&bounds_buffer, 0, unsafe {
+        std::mem::transmute::<&Rectangle, &[u8; 16]>(&rect)
+    });
     let submission_index = queue.submit([command_buffer]);
     wait_for_submitted_work(&device, &queue).await;
 

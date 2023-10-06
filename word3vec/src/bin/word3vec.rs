@@ -64,8 +64,8 @@ struct Options {
     num_threads: usize,
 
     /// Run more training iterations
-    #[arg(long, default_value_t = 5)]
-    iter: usize,
+    #[arg(long = "iter", default_value_t = 5)]
+    num_epochs: usize,
 
     /// Discard words that appear less than N times
     #[arg(long = "min-count", value_name = "N", default_value_t = 5)]
@@ -103,6 +103,10 @@ struct Options {
     // Note: In the original, cbow was the default; you specified skip-grams with `-cbow 0`.
     #[arg(long)]
     cbow: bool,
+
+    /// Use simplified implementation
+    #[arg(long)]
+    simplified: bool,
 }
 
 #[derive(Default)]
@@ -499,7 +503,7 @@ impl Word3Vec {
         }
     }
 
-    fn train_model_thread(&self, id: usize, epoch: usize) -> Result<()> {
+    fn train_model_thread(&self, thread_id: usize, epoch: usize) -> Result<()> {
         let window = self.options.window;
 
         let mut neu1: Vec<real> = vec![0.0; self.options.layer1_size];
@@ -507,14 +511,14 @@ impl Word3Vec {
 
         let mut fi = BufReader::new(File::open(&self.options.train_file)?);
         fi.seek(SeekFrom::Start(
-            self.file_size / self.options.num_threads as u64 * id as u64,
+            self.file_size / self.options.num_threads as u64 * thread_id as u64,
         ))
         .context("error seeking within training file")?;
 
         let layer1_size = self.options.layer1_size;
 
-        let mut rng = Rng((id + epoch * self.options.num_threads) as u64);
-        let num_epochs = self.options.iter;
+        let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+        let num_epochs = self.options.num_epochs;
         let epoch_starting_alpha = self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
         let mut alpha = epoch_starting_alpha;
         let mut word_count: u64 = 0;
@@ -532,7 +536,7 @@ impl Word3Vec {
                         "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
                         alpha,
                         word_count_actual as real
-                            / (self.options.iter as u64 * self.train_words + 1) as real
+                            / (self.options.num_epochs as u64 * self.train_words + 1) as real
                             * 100.0,
                         word_count_actual as real
                             / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
@@ -542,7 +546,7 @@ impl Word3Vec {
                 alpha = epoch_starting_alpha
                     * (1.0
                         - word_count_actual as real
-                            / (self.options.iter as u64 * self.train_words + 1) as real)
+                            / (self.options.num_epochs as u64 * self.train_words + 1) as real)
                         .max(0.0001);
             }
 
@@ -795,30 +799,6 @@ impl Word3Vec {
         Ok(())
     }
 
-    fn report_progress(&self, word_count: u64, last_word_count: &mut u64, alpha: &mut real) {
-        let n = word_count - *last_word_count;
-        let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
-        *last_word_count = word_count;
-
-        if self.options.debug_mode > 1 {
-            print!(
-                "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
-                alpha,
-                word_count_actual as real
-                    / (self.options.iter as u64 * self.train_words + 1) as real
-                    * 100.0,
-                word_count_actual as real
-                    / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
-            );
-            let _ = io::stdout().flush();
-        }
-        *alpha = self.starting_alpha
-            * (1.0
-                - word_count_actual as real
-                    / (self.options.iter as u64 * self.train_words + 1) as real)
-                .max(0.0001);
-    }
-
     /// The result contains multiple threads, which contain multiple sentences,
     /// which contain multiple words.
     fn load_training_file(&self) -> Result<Vec<Vec<Vec<usize>>>> {
@@ -886,79 +866,99 @@ impl Word3Vec {
         }
     }
 
-    fn train_model_thread_simplified(&self, id: usize) -> Result<()> {
+    fn train_model_thread_simplified(&self, thread_id: usize, epoch: usize) -> Result<()> {
         let window = self.options.window;
 
         let mut emb_adjust: Vec<real> = vec![0.0; self.options.layer1_size];
 
         let dim = self.options.layer1_size; // number of elements in embedding vector
 
-        let mut rng = Rng(id as u64);
-        let mut alpha = self.starting_alpha;
+        let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+        let num_epochs = self.options.num_epochs;
+        let epoch_starting_alpha = self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
+        let mut alpha = epoch_starting_alpha;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
         // Over training epochs
-        for _epoch in 0..self.options.iter {
-            let mut word_count: u64 = 0;
-            let mut last_word_count: u64 = 0;
-            // Over "sentences" (chunks of 1000 words)
-            for sentence in &self.training_sentences[id] {
-                word_count += sentence.len() as u64;
-                self.sample_sentence(sentence, &mut rng, &mut word_count, &mut sen);
+        let mut word_count: u64 = 0;
+        let mut last_word_count: u64 = 0;
+        // Over "sentences" (chunks of 1000 words)
+        for sentence in &self.training_sentences[thread_id] {
+            word_count += sentence.len() as u64;
+            self.sample_sentence(sentence, &mut rng, &mut word_count, &mut sen);
 
-                // Over word 1 (the word being predicted)
-                for sentence_position in 0..sen.len() {
-                    let target_word = sen[sentence_position];
-                    let l1 = target_word * dim;
+            // Over word 1 (the word being predicted)
+            for sentence_position in 0..sen.len() {
+                let target_word = sen[sentence_position];
+                let l1 = target_word * dim;
+                emb_adjust.fill(0.0);
+                let radius = window - rng.rand_u64() as usize % window;
+
+                // Over word 2 (the given word - ranges `radius` to either side of `sentence_position`).
+                let start = (sentence_position).saturating_sub(radius);
+                let stop = (sentence_position + radius + 1).min(sen.len());
+                for c in start..stop {
+                    if c == sentence_position {
+                        continue;
+                    }
+                    let word = sen[c];
                     emb_adjust.fill(0.0);
-                    let radius = window - rng.rand_u64() as usize % window;
 
-                    // Over word 2 (the given word - ranges `radius` to either side of `sentence_position`).
-                    let start = (sentence_position).saturating_sub(radius);
-                    let stop = (sentence_position + radius + 1).min(sen.len());
-                    for c in start..stop {
-                        if c == sentence_position {
+                    // Over predictors in the tree
+                    for d in 0..self.vocab[word].decision_path.len() {
+                        // Propagate hidden -> output
+                        let l2 = self.vocab[word].decision_indexes[d] as usize * dim;
+                        let f = (0..dim)
+                            .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
+                            .sum::<real>();
+                        if f <= -MAX_EXP || f >= MAX_EXP {
                             continue;
                         }
-                        let word = sen[c];
-                        emb_adjust.fill(0.0);
-
-                        // Over predictors in the tree
-                        for d in 0..self.vocab[word].decision_path.len() {
-                            // Propagate hidden -> output
-                            let l2 = self.vocab[word].decision_indexes[d] as usize * dim;
-                            let f = (0..dim)
-                                .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
-                                .sum::<real>();
-                            if f <= -MAX_EXP || f >= MAX_EXP {
-                                continue;
-                            }
-                            let f = self.sigmoid(f);
-                            // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                            let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
-                            // Propagate errors output -> hidden
-                            for c in 0..dim {
-                                emb_adjust[c] += g * self.weights[l2 + c].get();
-                            }
-                            for c in 0..dim {
-                                self.weights[l2 + c].add(g * self.embeddings[l1 + c].get());
-                            }
-                        }
-
+                        let f = self.sigmoid(f);
+                        // 'g' is the gradient (d/df loss) multiplied by the learning rate
+                        let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
+                        // Propagate errors output -> hidden
                         for c in 0..dim {
-                            self.embeddings[l1 + c].add(emb_adjust[c]);
+                            emb_adjust[c] += g * self.weights[l2 + c].get();
+                        }
+                        for c in 0..dim {
+                            self.weights[l2 + c].add(g * self.embeddings[l1 + c].get());
                         }
                     }
-                }
 
-                if word_count - last_word_count > 10000 {
-                    self.report_progress(word_count, &mut last_word_count, &mut alpha);
+                    for c in 0..dim {
+                        self.embeddings[l1 + c].add(emb_adjust[c]);
+                    }
                 }
             }
 
-            self.word_count_actual
-                .fetch_add(word_count - last_word_count, Ordering::Relaxed);
+            if word_count - last_word_count > 10000 {
+                let n = word_count - last_word_count;
+                let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+                last_word_count = word_count;
+
+                if self.options.debug_mode > 1 {
+                    print!(
+                        "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
+                        alpha,
+                        word_count_actual as real
+                            / (self.options.num_epochs as u64 * self.train_words + 1) as real
+                            * 100.0,
+                        word_count_actual as real
+                            / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
+                    );
+                    let _ = io::stdout().flush();
+                }
+                alpha = epoch_starting_alpha
+                    * (1.0
+                        - word_count_actual as real
+                            / (self.options.num_epochs as u64 * self.train_words + 1) as real)
+                        .max(0.0001);
+            }
         }
+
+        self.word_count_actual
+            .fetch_add(word_count - last_word_count, Ordering::Relaxed);
 
         Ok(())
     }
@@ -989,11 +989,17 @@ impl Word3Vec {
         }
         self.start = Instant::now();
 
-        for epoch in 0..self.options.iter {
+        for epoch in 0..self.options.num_epochs {
             thread::scope(|s| {
                 let this: &Word3Vec = self;
                 let threads = (0..this.options.num_threads)
-                    .map(|a| s.spawn(move || this.train_model_thread(a, epoch)))
+                    .map(|a| s.spawn(move || {
+                        if this.options.simplified {
+                            this.train_model_thread_simplified(a, epoch)
+                        } else {
+                            this.train_model_thread(a, epoch)
+                        }
+                    }))
                     .collect::<Vec<_>>();
                 for thread in threads {
                     if let Err(err) = thread.join().unwrap() {

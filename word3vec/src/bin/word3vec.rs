@@ -189,6 +189,10 @@ fn read_words(fin: File) -> impl Iterator<Item = Result<String, io::Error>> {
     })
 }
 
+fn linear_interpolate(range: std::ops::Range<real>, t: real) -> real {
+    range.start * (1.0 - t) + range.end * t
+}
+
 impl Word3Vec {
     fn new(options: Options) -> Self {
         let exp_table = (0..EXP_TABLE_SIZE)
@@ -875,8 +879,14 @@ impl Word3Vec {
 
         let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
         let num_epochs = self.options.num_epochs;
-        let epoch_starting_alpha = self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
-        let mut alpha = epoch_starting_alpha;
+        let epoch_alpha_range = linear_interpolate(
+            self.starting_alpha..0.0,
+            epoch as real / num_epochs as real
+        ) .. linear_interpolate(
+            self.starting_alpha..0.0,
+            (epoch + 1) as real / num_epochs as real
+        );
+        let mut alpha = epoch_alpha_range.start;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
         // Over training epochs
@@ -949,11 +959,10 @@ impl Word3Vec {
                     );
                     let _ = io::stdout().flush();
                 }
-                alpha = epoch_starting_alpha
-                    * (1.0
-                        - word_count_actual as real
-                            / (self.options.num_epochs as u64 * self.train_words + 1) as real)
-                        .max(0.0001);
+                alpha = linear_interpolate(
+                    epoch_alpha_range.clone(),
+                    word_count_actual as real / self.train_words as real
+                );
             }
         }
 

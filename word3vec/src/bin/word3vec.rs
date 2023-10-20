@@ -10,7 +10,7 @@ use std::time::Instant;
 use std::{iter, process, thread};
 
 use aligned_box::AlignedBox;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 
 use word3vec::{MAX_STRING, MAX_SENTENCE_LENGTH, real, VocabWord, Model, Rng, read_word};
@@ -250,8 +250,10 @@ impl Word3Vec {
         Ok(read_word(fin)?.map(|word| self.search_vocab(&word)))
     }
 
-    /// Adds a word to the vocabulary
-    fn add_word_to_vocab(&mut self, word: String) -> usize {
+    /// Adds a new word to the vocabulary.
+    ///
+    /// Returns an error if `word` is already in the vocabulary.
+    fn add_word_to_vocab(&mut self, word: String) -> Result<usize> {
         let n = self.vocab.len();
         self.vocab.push(VocabWord {
             count: 0,
@@ -259,8 +261,10 @@ impl Word3Vec {
             decision_indexes: Vec::new(),
             decision_path: Vec::new(),
         });
-        self.vocab_hash.insert(word, n);
-        n
+        if let Some(prev) = self.vocab_hash.insert(word, n) {
+            bail!("Attempted to insert word into vocabulary twice: {}", prev);
+        }
+        Ok(n)
     }
 
     /// Sorts the vocabulary by frequency using word counts
@@ -385,7 +389,7 @@ impl Word3Vec {
 
         self.vocab.clear();
         self.vocab_hash.clear();
-        self.add_word_to_vocab("</s>".to_string());
+        self.add_word_to_vocab("</s>".to_string())?;
 
         for word in read_words(fin) {
             let word = word.context("error reading training data file")?;
@@ -398,7 +402,7 @@ impl Word3Vec {
             if let Some(&a) = self.vocab_hash.get(&word) {
                 self.vocab[a].count += 1;
             } else {
-                let a = self.add_word_to_vocab(word);
+                let a = self.add_word_to_vocab(word)?;
                 self.vocab[a].count = 1;
             }
 
@@ -443,7 +447,7 @@ impl Word3Vec {
                 line_num + 1
             ))?;
 
-            let a = self.add_word_to_vocab(word);
+            let a = self.add_word_to_vocab(word)?;
             self.vocab[a].count = cn;
         }
         self.sort_vocab();

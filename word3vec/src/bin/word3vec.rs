@@ -873,9 +873,9 @@ impl Word3Vec {
     fn train_model_thread_simplified(&self, thread_id: usize, epoch: usize) -> Result<()> {
         let window = self.options.window;
 
-        let mut emb_adjust: Vec<real> = vec![0.0; self.options.layer1_size];
-
         let dim = self.options.layer1_size; // number of elements in embedding vector
+
+        let mut emb_adjust: Vec<real> = vec![0.0; dim];
 
         let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
         let num_epochs = self.options.num_epochs;
@@ -901,7 +901,6 @@ impl Word3Vec {
             for sentence_position in 0..sen.len() {
                 let target_word = sen[sentence_position];
                 let l1 = target_word * dim;
-                emb_adjust.fill(0.0);
                 let radius = window - rng.rand_u64() as usize % window;
 
                 // Over word 2 (the given word - ranges `radius` to either side of `sentence_position`).
@@ -911,13 +910,13 @@ impl Word3Vec {
                     if c == sentence_position {
                         continue;
                     }
-                    let word = sen[c];
+                    let given_word = sen[c];
                     emb_adjust.fill(0.0);
 
                     // Over predictors in the tree
-                    for d in 0..self.vocab[word].decision_path.len() {
+                    for d in 0..self.vocab[given_word].decision_path.len() {
                         // Propagate hidden -> output
-                        let l2 = self.vocab[word].decision_indexes[d] as usize * dim;
+                        let l2 = self.vocab[given_word].decision_indexes[d] as usize * dim;
                         let f = (0..dim)
                             .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
                             .sum::<real>();
@@ -926,7 +925,7 @@ impl Word3Vec {
                         }
                         let f = self.sigmoid(f);
                         // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                        let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
+                        let g = (1.0 - self.vocab[given_word].decision_path[d] as real - f) * alpha;
                         // Propagate errors output -> hidden
                         for c in 0..dim {
                             emb_adjust[c] += g * self.weights[l2 + c].get();

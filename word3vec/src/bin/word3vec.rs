@@ -377,15 +377,12 @@ impl Word3Vec {
     }
 
     fn learn_vocab_from_train_file(&mut self) -> Result<()> {
-        let mut fin =
+        let fin =
             File::open(&self.options.train_file).context("error opening training data file")?;
-        fin.seek(SeekFrom::End(0))
-            .context("error checking training data file size")?;
         self.file_size = fin
-            .stream_position()
-            .context("error checking training data file size")?;
-        fin.seek(SeekFrom::Start(0))
-            .context("error checking training data file size")?;
+            .metadata()
+            .context("error checking training data file size")?
+            .len();
 
         self.vocab.clear();
         self.vocab_hash.clear();
@@ -456,13 +453,11 @@ impl Word3Vec {
             println!("Words in train file: {}", self.train_words);
         }
 
-        let mut fin =
-            File::open(&self.options.train_file).context("error opening training file")?;
-        fin.seek(SeekFrom::End(0))
-            .context("error checking size of training file")?;
+        let fin = File::open(&self.options.train_file).context("error opening training file")?;
         self.file_size = fin
-            .stream_position()
-            .context("error checking size of training file")?;
+            .metadata()
+            .context("error checking size of training file")?
+            .len();
         Ok(())
     }
 

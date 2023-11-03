@@ -13,7 +13,7 @@ use aligned_box::AlignedBox;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-use word3vec::{MAX_STRING, MAX_SENTENCE_LENGTH, real, VocabWord, Model, Rng, read_word};
+use word3vec::{read_word, real, Model, Rng, VocabWord, MAX_SENTENCE_LENGTH, MAX_STRING};
 
 const EXP_TABLE_SIZE: usize = 1000;
 const MAX_EXP: real = 6.0;
@@ -523,7 +523,8 @@ impl Word3Vec {
 
         let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
         let num_epochs = self.options.num_epochs;
-        let epoch_starting_alpha = self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
+        let epoch_starting_alpha =
+            self.starting_alpha * ((num_epochs - epoch) as real / num_epochs as real);
         let mut alpha = epoch_starting_alpha;
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
@@ -725,7 +726,8 @@ impl Word3Vec {
                         if self.options.hs {
                             for d in 0..self.vocab[word].decision_path.len() {
                                 // Propagate hidden -> output
-                                let l2 = self.vocab[word].decision_indexes[d] as usize * layer1_size;
+                                let l2 =
+                                    self.vocab[word].decision_indexes[d] as usize * layer1_size;
                                 let f = (0..layer1_size)
                                     .map(|c| {
                                         self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
@@ -738,7 +740,8 @@ impl Word3Vec {
                                 }
                                 let f = self.sigmoid(f);
                                 // 'g' is the gradient (d/df loss) multiplied by the learning rate
-                                let g = (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
+                                let g =
+                                    (1.0 - self.vocab[word].decision_path[d] as real - f) * alpha;
                                 // Propagate errors output -> hidden
                                 for c in 0..layer1_size {
                                     neu1e[c] += g * self.weights[c + l2].get();
@@ -879,13 +882,12 @@ impl Word3Vec {
 
         let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
         let num_epochs = self.options.num_epochs;
-        let epoch_alpha_range = linear_interpolate(
-            self.starting_alpha..0.0,
-            epoch as real / num_epochs as real
-        ) .. linear_interpolate(
-            self.starting_alpha..0.0,
-            (epoch + 1) as real / num_epochs as real
-        );
+        let epoch_alpha_range =
+            linear_interpolate(self.starting_alpha..0.0, epoch as real / num_epochs as real)
+                ..linear_interpolate(
+                    self.starting_alpha..0.0,
+                    (epoch + 1) as real / num_epochs as real,
+                );
         let mut alpha = epoch_alpha_range.start;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
@@ -960,7 +962,7 @@ impl Word3Vec {
                 }
                 alpha = linear_interpolate(
                     epoch_alpha_range.clone(),
-                    word_count_actual as real / self.train_words as real
+                    word_count_actual as real / self.train_words as real,
                 );
             }
         }
@@ -1001,13 +1003,15 @@ impl Word3Vec {
             thread::scope(|s| {
                 let this: &Word3Vec = self;
                 let threads = (0..this.options.num_threads)
-                    .map(|a| s.spawn(move || {
-                        if this.options.simplified {
-                            this.train_model_thread_simplified(a, epoch)
-                        } else {
-                            this.train_model_thread(a, epoch)
-                        }
-                    }))
+                    .map(|a| {
+                        s.spawn(move || {
+                            if this.options.simplified {
+                                this.train_model_thread_simplified(a, epoch)
+                            } else {
+                                this.train_model_thread(a, epoch)
+                            }
+                        })
+                    })
                     .collect::<Vec<_>>();
                 for thread in threads {
                     if let Err(err) = thread.join().unwrap() {
@@ -1035,7 +1039,9 @@ impl Word3Vec {
         let mut output_file = self.options.output_file.clone();
         output_file.set_extension("");
 
-        output_file.as_mut_os_string().push(format!("-{num_epochs}"));
+        output_file
+            .as_mut_os_string()
+            .push(format!("-{num_epochs}"));
 
         if let Some(ext) = ext {
             output_file.set_extension(ext);
@@ -1052,14 +1058,21 @@ impl Word3Vec {
             None => {
                 // Save the word vectors
                 if self.options.bincode {
-                    bincode::serialize_into(fo, &Model {
-                        size: layer1_size,
-                        sample: self.options.sample,
-                        window: self.options.window,
-                        vocab: self.vocab.clone(),
-                        embeddings: self.embeddings.iter().map(Real::get).collect::<Vec<real>>(),
-                        weights: self.weights.iter().map(Real::get).collect::<Vec<real>>(),
-                    })?;
+                    bincode::serialize_into(
+                        fo,
+                        &Model {
+                            size: layer1_size,
+                            sample: self.options.sample,
+                            window: self.options.window,
+                            vocab: self.vocab.clone(),
+                            embeddings: self
+                                .embeddings
+                                .iter()
+                                .map(Real::get)
+                                .collect::<Vec<real>>(),
+                            weights: self.weights.iter().map(Real::get).collect::<Vec<real>>(),
+                        },
+                    )?;
                 } else {
                     writeln!(fo, "{} {}", vocab_size, layer1_size)?;
                     for (a, vw) in self.vocab.iter().enumerate() {

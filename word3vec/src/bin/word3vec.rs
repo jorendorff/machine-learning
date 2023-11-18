@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
@@ -916,8 +914,6 @@ impl Word3Vec {
                     let given_word = sen[c];
                     emb_adjust.fill(0.0);
 
-                    let mut pre_adjust_losses = vec![];
-
                     // Over predictors in the tree
                     for d in 0..self.vocab[given_word].decision_path.len() {
                         // Propagate hidden -> output
@@ -929,9 +925,6 @@ impl Word3Vec {
                             continue;
                         }
                         let f = self.sigmoid(f); // predicted probability 0 is correct
-                        let loss =
-                            (1.0 - self.vocab[given_word].decision_path[d] as real - f).abs();
-                        pre_adjust_losses.push(loss);
                         // 'g' is the gradient (d/df loss) multiplied by the learning rate
                         let g = (1.0 - self.vocab[given_word].decision_path[d] as real - f) * alpha;
                         // Propagate errors output -> hidden
@@ -942,36 +935,6 @@ impl Word3Vec {
                             self.weights[l2 + c].add(g * self.embeddings[l1 + c].get());
                         }
                     }
-
-                    // Check after adjustment to see if loss decreased. They should all go down
-                    // every time, even if the learning rate is too high for us to be making
-                    // progress overall, because the whole formula for `f` is monotonic in every
-                    // parameter.
-                    let mut post_adjust_losses = vec![];
-                    for d in 0..self.vocab[given_word].decision_path.len() {
-                        // Same computation as above with adjusted weights and embeddings
-                        let l2 = self.vocab[given_word].decision_indexes[d] as usize * dim;
-                        let f = (0..dim)
-                            .map(|c| self.embeddings[l1 + c].get() * self.weights[l2 + c].get())
-                            .sum::<real>();
-                        if f <= -MAX_EXP || f >= MAX_EXP {
-                            continue;
-                        }
-                        let f = self.sigmoid(f); // predicted probability 0 is correct
-                        let loss =
-                            (1.0 - self.vocab[given_word].decision_path[d] as real - f).abs();
-                        post_adjust_losses.push(loss);
-                    }
-                    eprintln!(
-                        "{:?}",
-                        pre_adjust_losses
-                            .into_iter()
-                            .zip(post_adjust_losses)
-                            .map(|(pre, post)| {
-                                post - pre // should be ... negative (loss decreased)
-                            })
-                            .collect::<Vec<_>>()
-                    );
 
                     for c in 0..dim {
                         self.embeddings[l1 + c].add(emb_adjust[c]);

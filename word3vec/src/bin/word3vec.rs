@@ -853,13 +853,11 @@ impl Word3Vec {
         &self,
         next_sentence: &[usize],
         rng: &mut Rng,
-        word_count: &mut u64,
         sen: &mut Vec<usize>,
     ) {
         sen.clear();
         for &word in next_sentence {
             // The subsampling randomly discards frequent words while keeping the ranking same
-            *word_count += 1;
             let sample = self.options.sample;
             if sample > 0.0 {
                 let f = self.vocab[word].count as real;
@@ -900,7 +898,7 @@ impl Word3Vec {
         // Over "sentences" (chunks of 1000 words)
         for sentence in &self.training_sentences[thread_id] {
             word_count += sentence.len() as u64;
-            self.sample_sentence(sentence, &mut rng, &mut word_count, &mut sen);
+            self.sample_sentence(sentence, &mut rng, &mut sen);
 
             // Over word 1 (the word being predicted)
             for sentence_position in 0..sen.len() {

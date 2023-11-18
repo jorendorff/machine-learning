@@ -869,15 +869,7 @@ impl Word3Vec {
         }
     }
 
-    #[allow(clippy::needless_range_loop)]
-    fn train_model_thread_simplified(&self, thread_id: usize, epoch: usize) -> Result<()> {
-        let window = self.options.window;
-
-        let dim = self.options.layer1_size; // number of elements in embedding vector
-
-        let mut emb_adjust: Vec<real> = vec![0.0; dim];
-
-        let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+    fn training_regimen(&self, thread_id: usize, epoch: usize) -> impl Iterator<Item=(real, &Vec<usize>)> {
         let num_epochs = self.options.num_epochs;
         let epoch_alpha_range =
             linear_interpolate(self.starting_alpha..0.0, epoch as real / num_epochs as real)
@@ -885,17 +877,68 @@ impl Word3Vec {
                     self.starting_alpha..0.0,
                     (epoch + 1) as real / num_epochs as real,
                 );
-        let mut alpha = epoch_alpha_range.start;
-        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
         // word_count_actual at the start of this epoch.
         let starting_word_count_actual: u64 = self.word_count_actual.load(Ordering::Relaxed);
+        let mut alpha = epoch_alpha_range.start;
 
+        // Number of words processed by the current thread this epoch.
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
+
+        let mut sentences = self.training_sentences[thread_id]
+            .iter();
+
+        std::iter::from_fn(move || {
+            match sentences.next() {
+                None => {
+                    self.word_count_actual.fetch_add(word_count - last_word_count, Ordering::Relaxed);
+                    None
+                }
+                Some(sentence) => {
+                    if word_count - last_word_count > 10000 {
+                        let n = word_count - last_word_count;
+                        let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+                        last_word_count = word_count;
+
+                        if self.options.debug_mode > 1 {
+                            print!(
+                                "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
+                                alpha,
+                                word_count_actual as real
+                                    / (self.options.num_epochs as u64 * self.train_words + 1) as real
+                                    * 100.0,
+                                word_count_actual as real
+                                    / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
+                            );
+                            let _ = io::stdout().flush();
+                        }
+                        alpha = linear_interpolate(
+                            epoch_alpha_range.clone(),
+                            (word_count_actual - starting_word_count_actual) as real / self.train_words as real,
+                        );
+                    }
+
+                    word_count += sentence.len() as u64;
+                    Some((alpha, sentence))
+                }
+            }
+        })
+    }
+
+    #[allow(clippy::needless_range_loop)]
+    fn train_model_thread_simplified(&self, thread_id: usize, epoch: usize) {
+        let window = self.options.window;
+
+        let dim = self.options.layer1_size; // number of elements in embedding vector
+
+        let mut emb_adjust: Vec<real> = vec![0.0; dim];
+
+        let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
+
         // Over "sentences" (chunks of 1000 words)
-        for sentence in &self.training_sentences[thread_id] {
-            word_count += sentence.len() as u64;
+        for (alpha, sentence) in self.training_regimen(thread_id, epoch) {
             self.sample_sentence(sentence, &mut rng, &mut sen);
 
             // Over word 1 (the word being predicted)
@@ -941,35 +984,7 @@ impl Word3Vec {
                     }
                 }
             }
-
-            if word_count - last_word_count > 10000 {
-                let n = word_count - last_word_count;
-                let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
-                last_word_count = word_count;
-
-                if self.options.debug_mode > 1 {
-                    print!(
-                        "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
-                        alpha,
-                        word_count_actual as real
-                            / (self.options.num_epochs as u64 * self.train_words + 1) as real
-                            * 100.0,
-                        word_count_actual as real
-                            / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
-                    );
-                    let _ = io::stdout().flush();
-                }
-                alpha = linear_interpolate(
-                    epoch_alpha_range.clone(),
-                    (word_count_actual - starting_word_count_actual) as real / self.train_words as real,
-                );
-            }
         }
-
-        self.word_count_actual
-            .fetch_add(word_count - last_word_count, Ordering::Relaxed);
-
-        Ok(())
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -1005,7 +1020,8 @@ impl Word3Vec {
                     .map(|a| {
                         s.spawn(move || {
                             if this.options.simplified {
-                                this.train_model_thread_simplified(a, epoch)
+                                this.train_model_thread_simplified(a, epoch);
+                                Ok(())
                             } else {
                                 this.train_model_thread(a, epoch)
                             }

@@ -892,7 +892,9 @@ impl Word3Vec {
         let mut alpha = epoch_alpha_range.start;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
 
-        // Over training epochs
+        // word_count_actual at the start of this epoch.
+        let starting_word_count_actual: u64 = self.word_count_actual.load(Ordering::Relaxed);
+
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
         // Over "sentences" (chunks of 1000 words)
@@ -998,7 +1000,7 @@ impl Word3Vec {
                 }
                 alpha = linear_interpolate(
                     epoch_alpha_range.clone(),
-                    word_count_actual as real / self.train_words as real,
+                    (word_count_actual - starting_word_count_actual) as real / self.train_words as real,
                 );
             }
         }

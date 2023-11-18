@@ -23,3 +23,4 @@ time target/release/word3vec \
      --iter=15 \
      --dump-epochs
 
+./target/release/word3vec-evaluate --train text8 --model vectors-15.bincode

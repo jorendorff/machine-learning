@@ -51,8 +51,10 @@ fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
 
   for (var i: u32 = path; i != path_end; i++) {
     let decision = paths[i];
+    let weights = &weights[decision.weight];
     var dot = 0.0;
     for (var j: u32 = 0; j < DIM; j++) {
+      dot += embedding[j] * weights[j];
     }
   }
 }

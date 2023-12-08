@@ -35,7 +35,7 @@ struct Task {
 var<storage, read> tasks: array<Task>;
 
 fn sigmoid(x: f32) -> f32 {
-  return 1.0f / (1.0f + exp(-x));
+  return 1.0 / (1.0 + exp(-x));
 }
 
 @compute
@@ -55,24 +55,24 @@ fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
   // WGSL initializes this to zero.
   var adjust: array<f32, DIM>;
 
-  for (var i: u32 = path; i != path_end; i++) {
+  for (var i = path; i != path_end; i++) {
     let decision = paths[i];
     let weights = &weights[decision.weight];
-    var dot = 0.0f;
-    for (var j: u32 = 0u; j < DIM; j++) {
+    var dot = 0.0;
+    for (var j = 0u; j < DIM; j++) {
       dot += (*embedding)[j] * (*weights)[j];
     }
 
     let prediction = sigmoid(dot);
-    let gradient = (1.0f - decision.direction - prediction) * task.alpha;
+    let gradient = (1.0 - decision.direction - prediction) * task.alpha;
 
-    for (var j: u32 = 0u; j < DIM; j++) {
+    for (var j = 0u; j < DIM; j++) {
       adjust[j] += gradient * (*weights)[j];
       (*weights)[j] += gradient * (*embedding)[j];
     }
   }
 
-  for (var j: u32 = 0u; j < DIM; j++) {
+  for (var j = 0u; j < DIM; j++) {
     (*embedding)[j] += adjust[j];
   }
 }

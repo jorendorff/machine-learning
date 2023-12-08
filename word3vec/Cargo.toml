@@ -13,4 +13,8 @@ encase = "0.6"
 indicatif = "0.17"
 ordered-float = "3.7"
 serde = {version = "1.0", features = ["derive"]}
-wgpu = "0.17"
+
+[dependencies.wgpu]
+#version = "0.17"
+git = "https://github.com/gfx-rs/wgpu.git"
+branch = "trunk"

@@ -7,6 +7,8 @@ use std::slice;
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
+mod gpu;
+
 pub const MAX_STRING: usize = 100;
 pub const MAX_SENTENCE_LENGTH: usize = 1000;
 

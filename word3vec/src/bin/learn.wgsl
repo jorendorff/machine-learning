@@ -1,4 +1,4 @@
-const DIM: u32 = 200;
+const DIM: i32 = 200;
 const WORKGROUP_SIZE: u32 = 256;
 const ROOT: u32 = 0xffffffff;
 
@@ -49,7 +49,7 @@ fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
   // The range within `paths` holding the path from the root to
   // `task.predicted`.
   var path = ranges[task.predicted];
-  var path_end = ranges[task.predicted + 1u];
+  var path_end = ranges[task.predicted + 1];
 
   // The adjustments we will apply to `embedding` when we're done.
   // WGSL initializes this to zero.
@@ -59,20 +59,20 @@ fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
     let decision = paths[i];
     let weights = &weights[decision.weight];
     var dot = 0.0;
-    for (var j = 0u; j < DIM; j++) {
+    for (var j = 0; j < DIM; j++) {
       dot += (*embedding)[j] * (*weights)[j];
     }
 
     let prediction = sigmoid(dot);
     let gradient = (1.0 - decision.direction - prediction) * task.alpha;
 
-    for (var j = 0u; j < DIM; j++) {
+    for (var j = 0; j < DIM; j++) {
       adjust[j] += gradient * (*weights)[j];
       (*weights)[j] += gradient * (*embedding)[j];
     }
   }
 
-  for (var j = 0u; j < DIM; j++) {
+  for (var j = 0; j < DIM; j++) {
     (*embedding)[j] += adjust[j];
   }
 }

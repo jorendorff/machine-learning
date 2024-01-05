@@ -11,6 +11,7 @@ use aligned_box::AlignedBox;
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 
+use word3vec::gpu::{Gpu, Runner};
 use word3vec::{read_word, real, Model, Rng, VocabWord, MAX_SENTENCE_LENGTH, MAX_STRING};
 
 const EXP_TABLE_SIZE: usize = 1000;
@@ -1168,6 +1169,26 @@ impl Word3Vec {
                 }
             }
         }
+        Ok(())
+    }
+
+    async fn train(gpu: &Gpu, model: &mut crate::Model) -> anyhow::Result<()> {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("src/bin/learn.wgsl");
+        let source = std::fs::read_to_string(&path)?;
+        let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
+
+        let mut runner = Runner::new(gpu, &module, "adjust");
+        runner.bind_in_out_slice(0, "embeddings", &model.embeddings);
+        runner.bind_in_out_slice(1, "weights", &model.weights);
+        //runner.bind_in_slice(2, "paths", &model.paths);
+        //runner.bind_in_slice(3, "ranges", &model.ranges);
+        //runner.bind_in_slice(4, "tasks", &model.tasks);
+        //runner.run((1,1,1)).await?;
+
+        //runner.copy_slice_out(0, &mut model.embeddings).await;
+        //runner.copy_slice_out(1, &mut model.weights).await;
+
         Ok(())
     }
 }

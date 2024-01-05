@@ -1,22 +1,19 @@
 //! GPU-based word2vec.
 
-#![allow(unused_variables)]
-
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use bytemuck::{Pod, Zeroable};
+use bytemuck::Pod;
 
 /// Handle to a device that can run computations.
-struct Gpu {
+pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
 }
 
-struct Runner<'gpu> {
+pub struct Runner<'gpu> {
     gpu: &'gpu Gpu,
     module: &'gpu wgpu::ShaderModule,
     entry_point: &'gpu str,
@@ -24,7 +21,7 @@ struct Runner<'gpu> {
 }
 
 impl Gpu {
-    async fn new(label: &str) -> Result<Self> {
+    pub async fn new(label: &str) -> Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::util::backend_bits_from_env().unwrap_or(wgpu::Backends::PRIMARY),
             dx12_shader_compiler: wgpu::util::dx12_shader_compiler_from_env().unwrap_or_default(),
@@ -50,14 +47,13 @@ impl Gpu {
         Ok(Gpu { device, queue })
     }
 
-    async fn load_wgsl_module(&self, path: &Path) -> Result<wgpu::ShaderModule> {
-        let source = fs::read_to_string(path)?;
+    pub async fn load_wgsl_module(&self, label: Option<&str>, source: &str) -> Result<wgpu::ShaderModule> {
         self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(&format!("{path:?}")),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
+                label,
+                source: wgpu::ShaderSource::Wgsl(source.to_string().into()),
             });
         if let Some(err) = self.device.pop_error_scope().await {
             anyhow::bail!("bad: {err}");
@@ -65,19 +61,21 @@ impl Gpu {
         Ok(module)
     }
 
-    async fn submit(&self, command_buffers: impl IntoIterator<Item = wgpu::CommandBuffer>) {
+    pub async fn submit(&self, command_buffers: impl IntoIterator<Item = wgpu::CommandBuffer>) {
         let (sender, receiver) = tokio::sync::oneshot::channel();
         let submission_index = self.queue.submit(command_buffers);
         self.queue.on_submitted_work_done(move || {
             let _ = sender.send(());
         });
-        assert!(self.device.poll(wgpu::Maintain::Wait));
+        assert!(self
+            .device
+            .poll(wgpu::Maintain::WaitForSubmissionIndex(submission_index)));
         receiver.await.unwrap();
     }
 }
 
 impl<'gpu> Runner<'gpu> {
-    fn new(
+    pub fn new(
         gpu: &'gpu Gpu,
         module: &'gpu wgpu::ShaderModule,
         entry_point: &'gpu str,
@@ -90,56 +88,51 @@ impl<'gpu> Runner<'gpu> {
         }
     }
 
-    fn bind(
-        &mut self,
-        binding: u32,
-        label: &str,
-        usage: wgpu::BufferUsages,
-        size: usize,
-    ) -> &wgpu::Buffer {
+    fn bind(&mut self, binding: u32, label: &str, usage: wgpu::BufferUsages, size: usize) {
         let buffer = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: size as u64,
             usage,
             mapped_at_creation: false,
         });
-        match self.buffers.entry(binding) {
-            Entry::Occupied(_) => panic!("binding {binding} bound twice"),
-            Entry::Vacant(e) => e.insert(buffer),
-        }
+        assert!(self.buffers.insert(binding, buffer).is_none());
     }
 
-    fn bind_in<T>(&mut self, binding: u32, label: &str, data: &T)
+    pub fn bind_in<T>(&mut self, binding: u32, label: &str, data: &T)
     where
         T: bytemuck::NoUninit,
     {
         let bytes = bytemuck::bytes_of(data);
-        let buffer = self.bind(
+        self.bind(
             binding,
             label,
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             bytes.len(),
         );
 
-        self.gpu.queue.write_buffer(&buffer, 0, bytes);
+        self.gpu
+            .queue
+            .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    fn bind_in_slice<T>(&mut self, binding: u32, label: &str, data: &[T])
+    pub fn bind_in_slice<T>(&mut self, binding: u32, label: &str, data: &[T])
     where
         T: bytemuck::NoUninit,
     {
         let bytes = bytemuck::cast_slice::<T, u8>(data);
-        let buffer = self.bind(
+        self.bind(
             binding,
             label,
             wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             bytes.len(),
         );
 
-        self.gpu.queue.write_buffer(&buffer, 0, bytes);
+        self.gpu
+            .queue
+            .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    fn bind_out(&mut self, binding: u32, label: &str, size: usize) -> &wgpu::Buffer {
+    pub fn bind_out(&mut self, binding: u32, label: &str, size: usize) -> &wgpu::Buffer {
         let buffer = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(label),
             size: size.try_into().unwrap(),
@@ -153,12 +146,12 @@ impl<'gpu> Runner<'gpu> {
         }
     }
 
-    fn bind_in_out<T>(&mut self, binding: u32, label: &str, data: &'gpu T)
+    pub fn bind_in_out<T>(&mut self, binding: u32, label: &str, data: &'gpu T)
     where
         T: Pod,
     {
         let bytes = bytemuck::bytes_of(data);
-        let buffer = self.bind(
+        self.bind(
             binding,
             label,
             wgpu::BufferUsages::STORAGE
@@ -166,16 +159,18 @@ impl<'gpu> Runner<'gpu> {
                 | wgpu::BufferUsages::COPY_DST,
             bytes.len(),
         );
-        self.gpu.queue.write_buffer(buffer, 0, bytes);
+        self.gpu
+            .queue
+            .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    fn bind_in_out_slice<T>(&mut self, binding: u32, label: &str, data: &'gpu [T])
+    pub fn bind_in_out_slice<T>(&mut self, binding: u32, label: &str, data: &'gpu [T])
     where
         T: Pod,
     {
         //let bytes = bytemuck::bytes_of(data);
         let bytes = bytemuck::cast_slice::<T, u8>(data);
-        let buffer = self.bind(
+        self.bind(
             binding,
             label,
             wgpu::BufferUsages::STORAGE
@@ -183,21 +178,23 @@ impl<'gpu> Runner<'gpu> {
                 | wgpu::BufferUsages::COPY_DST,
             bytes.len(),
         );
-        self.gpu.queue.write_buffer(buffer, 0, bytes);
+        self.gpu
+            .queue
+            .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    async fn run(&self) -> Result<()> {
+    pub async fn run(&self, size: (u32, u32, u32)) -> Result<()> {
         self.gpu
             .device
             .push_error_scope(wgpu::ErrorFilter::Validation);
-        self.run_inner().await;
+        self.run_inner(size).await;
         if let Some(err) = self.gpu.device.pop_error_scope().await {
             anyhow::bail!("run failed: {err}");
         }
         Ok(())
     }
 
-    async fn run_inner(&self) {
+    async fn run_inner(&self, size: (u32, u32, u32)) {
         let pipeline = self
             .gpu
             .device
@@ -248,12 +245,7 @@ impl<'gpu> Runner<'gpu> {
                 compute_pass.set_pipeline(&pipeline);
                 compute_pass.set_bind_group(0, &bind_group, &[]);
 
-                // TODO - make this code generic across workloads :-\
-                // compute_pass.dispatch_workgroups(
-                //     (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32,
-                //     (HEIGHT / WORKGROUP_HEIGHT) as u32,
-                //     1,
-                // );
+                compute_pass.dispatch_workgroups(size.0, size.1, size.2);
             }
             command_encoder.finish()
         };
@@ -261,7 +253,7 @@ impl<'gpu> Runner<'gpu> {
         self.gpu.submit([command_buffer]).await;
     }
 
-    async fn copy_to_mapped_buffer<'buf>(
+    pub async fn copy_to_mapped_buffer<'buf>(
         &self,
         binding: u32,
         readback_buffer: &'buf wgpu::Buffer,
@@ -284,7 +276,7 @@ impl<'gpu> Runner<'gpu> {
         map_slice(&self.gpu.device, &readback_buffer.slice(..)).await
     }
 
-    async fn copy_slice_out<T>(&self, binding: u32, out: &mut [T])
+    pub async fn copy_slice_out<T>(&self, binding: u32, out: &mut [T])
     where
         T: Pod,
     {
@@ -315,66 +307,19 @@ async fn map_slice<'a>(
 }
 
 async fn train(gpu: &Gpu, model: &mut crate::Model) -> anyhow::Result<()> {
-    let module = gpu.load_wgsl_module(Path::new("learn.wgsl")).await?;
+    let source = std::fs::read_to_string(Path::new("learn.wgsl"))?;
+    let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
 
-    let runner = Runner::new(gpu, &module, "adjust");
+    let mut runner = Runner::new(gpu, &module, "adjust");
     runner.bind_in_out_slice(0, "embeddings", &model.embeddings);
     runner.bind_in_out_slice(1, "weights", &model.weights);
-    runner.bind_in_slice(2, "paths", &model.paths);
-    runner.bind_in_slice(3, "ranges", &model.ranges);
-    runner.bind_in_slice(4, "tasks", &model.tasks);
-    runner.run().await?;
+    //runner.bind_in_slice(2, "paths", &model.paths);
+    //runner.bind_in_slice(3, "ranges", &model.ranges);
+    //runner.bind_in_slice(4, "tasks", &model.tasks);
+    //runner.run((1,1,1)).await?;
 
-    runner.copy_slice_out(0, &mut model.embeddings).await;
-    runner.copy_slice_out(1, &mut model.weights).await;
-
-    Ok(())
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Zeroable, Pod)]
-struct Rectangle {
-    top_left: [f32; 2],
-    bottom_right: [f32; 2],
-}
-
-#[tokio::main]
-async fn mandelbrot_example() -> anyhow::Result<()> {
-    const WIDTH: usize = 1024;
-    const HEIGHT: usize = 1024;
-    const PACK_FACTOR: usize = 4;
-
-    const WORKGROUP_WIDTH: usize = 16;
-    const WORKGROUP_HEIGHT: usize = 16;
-
-    let gpu = Gpu::new("mandelbrotter").await?;
-    let module = gpu.load_wgsl_module(Path::new("learn.wgsl")).await?;
-    let runner = Runner::new(&gpu, &module, "mandelbrot");
-
-    runner.bind_out(0, "mandelbrot pixels", WIDTH * HEIGHT);
-    runner.bind_in(
-        1,
-        "viewport bounds",
-        &Rectangle {
-            top_left: [-1.0, -1.0],
-            bottom_right: [0.0, 0.0],
-        },
-    );
-
-    runner.run().await?;
-
-    let mut pixels = [0u8; WIDTH * HEIGHT];
-    runner.copy_slice_out(0, &mut pixels).await;
-
-    image::save_buffer_with_format(
-        "mandelbrot.png",
-        &pixels,
-        WIDTH.try_into().unwrap(),
-        HEIGHT.try_into().unwrap(),
-        image::ColorType::L8,
-        image::ImageFormat::Png,
-    )
-    .context("error writing image")?;
+    //runner.copy_slice_out(0, &mut model.embeddings).await;
+    //runner.copy_slice_out(1, &mut model.weights).await;
 
     Ok(())
 }

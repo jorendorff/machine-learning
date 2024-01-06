@@ -1172,6 +1172,7 @@ impl Word3Vec {
         Ok(())
     }
 
+    #[allow(dead_code)]
     async fn train(gpu: &Gpu, model: &mut crate::Model) -> anyhow::Result<()> {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("src/bin/learn.wgsl");

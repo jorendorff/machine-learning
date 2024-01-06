@@ -1,6 +1,7 @@
 //! GPU-based word2vec.
 
-use std::collections::hash_map::Entry;
+use std::sync::Arc;
+use std::{collections::hash_map::Entry, sync::mpsc};
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
@@ -8,8 +9,11 @@ use bytemuck::Pod;
 
 /// Handle to a device that can run computations.
 pub struct Gpu {
-    device: wgpu::Device,
+    device: Arc<wgpu::Device>,
     queue: wgpu::Queue,
+
+    /// Queue submissions we should poll for.
+    submissions: mpsc::Sender<wgpu::SubmissionIndex>,
 }
 
 pub struct Runner<'gpu> {
@@ -42,8 +46,21 @@ impl Gpu {
             )
             .await
             .context("failed to create device")?;
+        let device = Arc::new(device);
 
-        Ok(Gpu { device, queue })
+        // Start a thread to poll the device for submissions someone cares about.
+        let (submissions, rx_submissions) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            // Get our own Arc.
+            let device = device.clone();
+            move || {
+                for index in rx_submissions {
+                    device.poll(wgpu::Maintain::WaitForSubmissionIndex(index));
+                }
+            }
+        });
+
+        Ok(Gpu { device, queue, submissions })
     }
 
     pub async fn load_wgsl_module(&self, label: Option<&str>, source: &str) -> Result<wgpu::ShaderModule> {
@@ -62,13 +79,11 @@ impl Gpu {
 
     pub async fn submit(&self, command_buffers: impl IntoIterator<Item = wgpu::CommandBuffer>) {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        let submission_index = self.queue.submit(command_buffers);
+        let index = self.queue.submit(command_buffers);
         self.queue.on_submitted_work_done(move || {
             let _ = sender.send(());
         });
-        assert!(self
-            .device
-            .poll(wgpu::Maintain::WaitForSubmissionIndex(submission_index)));
+        self.submissions.send(index).unwrap();
         receiver.await.unwrap();
     }
 }

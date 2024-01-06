@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
     );
     runner.run(size).await?;
 
-    let mut pixels = [0u8; WIDTH * HEIGHT];
+    let mut pixels = vec![0u8; WIDTH * HEIGHT];
     runner.copy_slice_out(0, &mut pixels).await;
 
     image::save_buffer_with_format(

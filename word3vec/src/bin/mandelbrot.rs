@@ -19,7 +19,9 @@ async fn main() -> anyhow::Result<()> {
     const WORKGROUP_HEIGHT: usize = 16;
 
     let gpu = Gpu::new("mandelbrotter").await?;
-    let module = gpu.load_wgsl_module(Some("mandelbrot"), include_str!("mandelbrot.wgsl")).await?;
+    let module = gpu
+        .load_wgsl_module(Some("mandelbrot"), include_str!("mandelbrot.wgsl"))
+        .await?;
     let mut runner = Runner::new(&gpu, &module, "mandelbrot");
 
     runner.bind_out(0, "mandelbrot pixels", WIDTH * HEIGHT);

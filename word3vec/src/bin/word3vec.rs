@@ -847,12 +847,7 @@ impl Word3Vec {
         Ok(threads)
     }
 
-    fn sample_sentence(
-        &self,
-        next_sentence: &[usize],
-        rng: &mut Rng,
-        sen: &mut Vec<usize>,
-    ) {
+    fn sample_sentence(&self, next_sentence: &[usize], rng: &mut Rng, sen: &mut Vec<usize>) {
         sen.clear();
         for &word in next_sentence {
             // The subsampling randomly discards frequent words while keeping the ranking same
@@ -869,7 +864,11 @@ impl Word3Vec {
         }
     }
 
-    fn training_regimen(&self, thread_id: usize, epoch: usize) -> impl Iterator<Item=(real, &Vec<usize>)> {
+    fn training_regimen(
+        &self,
+        thread_id: usize,
+        epoch: usize,
+    ) -> impl Iterator<Item = (real, &Vec<usize>)> {
         let num_epochs = self.options.num_epochs;
         let epoch_alpha_range =
             linear_interpolate(self.starting_alpha..0.0, epoch as real / num_epochs as real)
@@ -886,42 +885,42 @@ impl Word3Vec {
         let mut word_count: u64 = 0;
         let mut last_word_count: u64 = 0;
 
-        let mut sentences = self.training_sentences[thread_id]
-            .iter();
+        let mut sentences = self.training_sentences[thread_id].iter();
 
-        std::iter::from_fn(move || {
-            match sentences.next() {
-                None => {
-                    self.word_count_actual.fetch_add(word_count - last_word_count, Ordering::Relaxed);
-                    None
-                }
-                Some(sentence) => {
-                    if word_count - last_word_count > 10000 {
-                        let n = word_count - last_word_count;
-                        let word_count_actual = self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
-                        last_word_count = word_count;
+        std::iter::from_fn(move || match sentences.next() {
+            None => {
+                self.word_count_actual
+                    .fetch_add(word_count - last_word_count, Ordering::Relaxed);
+                None
+            }
+            Some(sentence) => {
+                if word_count - last_word_count > 10000 {
+                    let n = word_count - last_word_count;
+                    let word_count_actual =
+                        self.word_count_actual.fetch_add(n, Ordering::Relaxed) + n;
+                    last_word_count = word_count;
 
-                        if self.options.debug_mode > 1 {
-                            print!(
-                                "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
-                                alpha,
-                                word_count_actual as real
-                                    / (self.options.num_epochs as u64 * self.train_words + 1) as real
-                                    * 100.0,
-                                word_count_actual as real
-                                    / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
-                            );
-                            let _ = io::stdout().flush();
-                        }
-                        alpha = linear_interpolate(
-                            epoch_alpha_range.clone(),
-                            (word_count_actual - starting_word_count_actual) as real / self.train_words as real,
+                    if self.options.debug_mode > 1 {
+                        print!(
+                            "\rAlpha: {}  Progress: {:.2}%  Words/thread/sec: {:.2}k  ",
+                            alpha,
+                            word_count_actual as real
+                                / (self.options.num_epochs as u64 * self.train_words + 1) as real
+                                * 100.0,
+                            word_count_actual as real
+                                / ((self.start.elapsed().as_secs_f64() + 1.0) as real * 1000.0),
                         );
+                        let _ = io::stdout().flush();
                     }
-
-                    word_count += sentence.len() as u64;
-                    Some((alpha, sentence))
+                    alpha = linear_interpolate(
+                        epoch_alpha_range.clone(),
+                        (word_count_actual - starting_word_count_actual) as real
+                            / self.train_words as real,
+                    );
                 }
+
+                word_count += sentence.len() as u64;
+                Some((alpha, sentence))
             }
         })
     }
@@ -968,6 +967,7 @@ impl Word3Vec {
                             continue;
                         }
                         let f = self.sigmoid(f); // predicted probability 0 is correct
+
                         // 'g' is the gradient (d/df loss) multiplied by the learning rate
                         let g = (1.0 - self.vocab[given_word].decision_path[d] as real - f) * alpha;
                         // Propagate errors output -> hidden

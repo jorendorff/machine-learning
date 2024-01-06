@@ -18,16 +18,22 @@ struct Decision {
 @group(0) @binding(2)
 var<storage, read> paths: array<Decision>;
 
-/// `ranges[i]` is the index in `paths` of the start of the path from
-/// root to leaf of embedding `i`.
+// `ranges[i]` is the index in `paths` of the start of the path from
+// root to leaf of embedding `i`.
+//
+// Thus the path from the root to word `i` is a slice of `paths`,
+// `paths[ranges[i] .. ranges[i + 1]]`.
+//
+// The length of this array is NWORDS + 1 so that this formula always works.
 @group(0) @binding(3)
 var<storage, read> ranges: array<u32>;
 
-// Indices in embeddings of the given word, and the word we wish we
-// predicted.
 struct Task {
+  // index in embeddings of the given word
   given: u32,
+  // index in embeddings of the word we should predict
   predicted: u32,
+  // learning rate
   alpha: f32,
 }
 
@@ -38,6 +44,9 @@ fn sigmoid(x: f32) -> f32 {
   return 1.0 / (1.0 + exp(-x));
 }
 
+// One invocation of this function takes a single task and updates
+// - The embedding for the `given` word
+// - The weights of the decision nodes along the path to the `predicted` word.
 @compute
 @workgroup_size(WORKGROUP_SIZE)
 fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {

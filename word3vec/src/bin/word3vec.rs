@@ -103,9 +103,16 @@ struct Options {
     #[arg(long)]
     cbow: bool,
 
-    /// Use simplified implementation
-    #[arg(long)]
-    simplified: bool,
+    /// Specify which implementation to use
+    #[arg(long, default_value = "original")]
+    r#impl: TrainingImpl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum TrainingImpl {
+    Original,
+    Simplified,
+    Gpu,
 }
 
 #[derive(Default)]
@@ -987,6 +994,28 @@ impl Word3Vec {
         }
     }
 
+    async fn train_model_gpu(&self, gpu: &Gpu) -> anyhow::Result<()> {
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("src/bin/learn.wgsl");
+        let source = std::fs::read_to_string(&path)?;
+        let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
+
+        let mut _runner = Runner::new(gpu, &module, "adjust");
+        todo!();
+
+        //runner.bind_in_out_slice(0, "embeddings", &model.embeddings);
+        //runner.bind_in_out_slice(1, "weights", &model.weights);
+        //runner.bind_in_slice(2, "paths", &model.paths);
+        //runner.bind_in_slice(3, "ranges", &model.ranges);
+        //runner.bind_in_slice(4, "tasks", &model.tasks);
+        //runner.run((tasks.len(), 1, 1)).await?;
+
+        //runner.copy_slice_out(0, &mut model.embeddings).await;
+        //runner.copy_slice_out(1, &mut model.weights).await;
+
+        //Ok(())
+    }
+
     #[allow(clippy::needless_range_loop)]
     fn train_model(&mut self) -> Result<()> {
         println!(
@@ -1013,27 +1042,40 @@ impl Word3Vec {
         }
         self.start = Instant::now();
 
+        let mut gpu: Option<Gpu> = None;
+
         for epoch in 0..self.options.num_epochs {
-            thread::scope(|s| {
-                let this: &Word3Vec = self;
-                let threads = (0..this.options.num_threads)
-                    .map(|a| {
-                        s.spawn(move || {
-                            if this.options.simplified {
-                                this.train_model_thread_simplified(a, epoch);
-                                Ok(())
-                            } else {
-                                this.train_model_thread(a, epoch)
-                            }
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                for thread in threads {
-                    if let Err(err) = thread.join().unwrap() {
-                        eprintln!("Error in worker thread: {err:#}");
-                    }
+            match self.options.r#impl {
+                TrainingImpl::Original | TrainingImpl::Simplified => {
+                    let simplified = self.options.r#impl == TrainingImpl::Simplified;
+                    let this: &Word3Vec = self;
+
+                    thread::scope(|s| {
+                        let this: &Word3Vec = this;
+                        for a in 0..this.options.num_threads {
+                            s.spawn(move || {
+                                if simplified {
+                                    this.train_model_thread_simplified(a, epoch);
+                                    Ok(())
+                                } else {
+                                    this.train_model_thread(a, epoch)
+                                }
+                            });
+                        }
+                    });
                 }
-            });
+                TrainingImpl::Gpu => {
+                    let runtime = tokio::runtime::Runtime::new()?;
+                    runtime.block_on(async {
+                        if gpu.is_none() {
+                            gpu = Some(Gpu::new("word3vec training device").await?);
+                        }
+                        let gpu = gpu.as_ref().unwrap();
+                        self.train_model_gpu(gpu).await?;
+                        Result::<()>::Ok(())
+                    })?;
+                }
+            }
 
             if self.options.dump_epochs {
                 let output_file = self.output_file_for_epochs(epoch + 1);
@@ -1169,26 +1211,6 @@ impl Word3Vec {
                 }
             }
         }
-        Ok(())
-    }
-
-    async fn train(gpu: &Gpu, model: &mut crate::Model) -> anyhow::Result<()> {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("src/bin/learn.wgsl");
-        let source = std::fs::read_to_string(&path)?;
-        let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
-
-        let mut runner = Runner::new(gpu, &module, "adjust");
-        runner.bind_in_out_slice(0, "embeddings", &model.embeddings);
-        runner.bind_in_out_slice(1, "weights", &model.weights);
-        //runner.bind_in_slice(2, "paths", &model.paths);
-        //runner.bind_in_slice(3, "ranges", &model.ranges);
-        //runner.bind_in_slice(4, "tasks", &model.tasks);
-        //runner.run((1,1,1)).await?;
-
-        //runner.copy_slice_out(0, &mut model.embeddings).await;
-        //runner.copy_slice_out(1, &mut model.weights).await;
-
         Ok(())
     }
 }

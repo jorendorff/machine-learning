@@ -51,8 +51,7 @@ impl Gpu {
         // Start a thread to poll the device for submissions someone cares about.
         let (submissions, rx_submissions) = std::sync::mpsc::channel();
         std::thread::spawn({
-            // Get our own Arc.
-            let device = device.clone();
+            let device = Arc::clone(&device);
             move || {
                 for index in rx_submissions {
                     device.poll(wgpu::Maintain::WaitForSubmissionIndex(index));

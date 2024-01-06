@@ -1,8 +1,8 @@
 //! GPU-based word2vec.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{collections::hash_map::Entry, sync::mpsc};
-use std::collections::HashMap;
 
 use anyhow::{Context, Result};
 use bytemuck::Pod;
@@ -60,10 +60,18 @@ impl Gpu {
             }
         });
 
-        Ok(Gpu { device, queue, submissions })
+        Ok(Gpu {
+            device,
+            queue,
+            submissions,
+        })
     }
 
-    pub async fn load_wgsl_module(&self, label: Option<&str>, source: &str) -> Result<wgpu::ShaderModule> {
+    pub async fn load_wgsl_module(
+        &self,
+        label: Option<&str>,
+        source: &str,
+    ) -> Result<wgpu::ShaderModule> {
         self.device.push_error_scope(wgpu::ErrorFilter::Validation);
         let module = self
             .device

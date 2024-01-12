@@ -996,7 +996,7 @@ impl Word3Vec {
         }
     }
 
-    async fn train_model_gpu(&self, gpu: &Gpu) -> anyhow::Result<()> {
+    async fn train_model_gpu(&self, gpu: &Gpu, epoch: usize) -> anyhow::Result<()> {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("src/bin/learn.wgsl");
         let source = std::fs::read_to_string(&path)?;
@@ -1030,13 +1030,71 @@ impl Word3Vec {
         }
         ranges.push(paths.len().try_into().unwrap());
 
+        #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+        #[repr(C)]
+        struct Task {
+            // index in embeddings of the given word
+            given: u32,
+            // index in embeddings of the word we should predict
+            predicted: u32,
+            // learning rate
+            alpha: f32,
+        }
+
+        let mut tasks: Vec<Task> = vec![];
+
+        assert_eq!(self.training_sentences.len(), 1);
+        let thread_id = 0;
+        let window = self.options.window;
+        let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
+        let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+
+        // Over "sentences" (chunks of 1000 words)
+        for (alpha, sentence) in self.training_regimen(thread_id, epoch) {
+            self.sample_sentence(sentence, &mut rng, &mut sen);
+
+            // Over word 1 (the word being predicted)
+            for sentence_position in 0..sen.len() {
+                let target_word = sen[sentence_position];
+                let radius = window - rng.rand_u64() as usize % window;
+
+                // Over word 2 (the given word - ranges `radius` to either side of `sentence_position`).
+                let start = (sentence_position).saturating_sub(radius);
+                let stop = (sentence_position + radius + 1).min(sen.len());
+                for c in start..stop {
+                    if c == sentence_position {
+                        continue;
+                    }
+                    let given_word = sen[c];
+
+                    tasks.push(Task {
+                        given: given_word.try_into().unwrap(),
+                        predicted: target_word.try_into().unwrap(),
+                        alpha,
+                    });
+                }
+            }
+        }
+
+        // Truncate to a round number of workgroups
+        const WORKGROUP_SIZE: usize = 256; // must match the wgsl
+        while tasks.len() % WORKGROUP_SIZE != 0 {
+            tasks.pop();
+        }
+
         let mut runner = Runner::new(gpu, &module, "adjust");
         runner.bind_in_out_slice(0, "embeddings", &embeddings);
         runner.bind_in_out_slice(1, "weights", &weights);
         runner.bind_in_slice(2, "paths", &paths);
         runner.bind_in_slice(3, "ranges", &ranges);
-        //runner.bind_in_slice(4, "tasks", &model.tasks);
-        //runner.run((tasks.len(), 1, 1)).await?;
+        runner.bind_in_slice(4, "tasks", &tasks);
+        runner
+            .run((
+                tasks.len().div_ceil(WORKGROUP_SIZE).try_into().unwrap(),
+                1,
+                1,
+            ))
+            .await?;
 
         runner.copy_slice_out(0, &mut embeddings).await;
         runner.copy_slice_out(1, &mut weights).await;
@@ -1107,7 +1165,7 @@ impl Word3Vec {
                             gpu = Some(Gpu::new("word3vec training device").await?);
                         }
                         let gpu = gpu.as_ref().unwrap();
-                        self.train_model_gpu(gpu).await?;
+                        self.train_model_gpu(gpu, epoch).await?;
                         Result::<()>::Ok(())
                     })?;
                 }

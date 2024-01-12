@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::fs::File;
@@ -1000,20 +1002,54 @@ impl Word3Vec {
         let source = std::fs::read_to_string(&path)?;
         let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
 
-        let mut _runner = Runner::new(gpu, &module, "adjust");
-        todo!();
+        let mut embeddings: Vec<f32> = self.embeddings.iter().map(|r| r.get()).collect();
+        let mut weights: Vec<f32> = self.weights.iter().map(|r| r.get()).collect();
 
-        //runner.bind_in_out_slice(0, "embeddings", &model.embeddings);
-        //runner.bind_in_out_slice(1, "weights", &model.weights);
-        //runner.bind_in_slice(2, "paths", &model.paths);
-        //runner.bind_in_slice(3, "ranges", &model.ranges);
+        #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+        #[repr(C)]
+        struct Decision {
+            weight: u32,
+
+            // 1 for left, 0 for right
+            direction: f32,
+        }
+
+        let mut paths: Vec<Decision> = vec![]; // many arrays of node-ids, concatenated
+        let mut ranges: Vec<u32> = vec![]; // indexes into paths for each word
+        for word in &self.vocab {
+            ranges.push(paths.len().try_into().unwrap());
+            paths.extend(
+                word.decision_indexes
+                    .iter()
+                    .zip(word.decision_path.iter())
+                    .map(|(node, dir)| Decision {
+                        weight: *node,
+                        direction: *dir as f32,
+                    }),
+            );
+        }
+        ranges.push(paths.len().try_into().unwrap());
+
+        let mut runner = Runner::new(gpu, &module, "adjust");
+        runner.bind_in_out_slice(0, "embeddings", &embeddings);
+        runner.bind_in_out_slice(1, "weights", &weights);
+        runner.bind_in_slice(2, "paths", &paths);
+        runner.bind_in_slice(3, "ranges", &ranges);
         //runner.bind_in_slice(4, "tasks", &model.tasks);
         //runner.run((tasks.len(), 1, 1)).await?;
 
-        //runner.copy_slice_out(0, &mut model.embeddings).await;
-        //runner.copy_slice_out(1, &mut model.weights).await;
+        runner.copy_slice_out(0, &mut embeddings).await;
+        runner.copy_slice_out(1, &mut weights).await;
 
-        //Ok(())
+        // copy back to self
+        for (value, target) in embeddings.iter().copied().zip(self.embeddings.iter()) {
+            target.set(value);
+        }
+        for (value, target) in weights.iter().copied().zip(&*self.weights) {
+            target.set(value);
+        }
+
+        Ok(())
     }
 
     #[allow(clippy::needless_range_loop)]

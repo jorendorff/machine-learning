@@ -167,7 +167,7 @@ impl<'gpu> Runner<'gpu> {
         }
     }
 
-    pub fn bind_in_out<T>(&mut self, binding: u32, label: &str, data: &'gpu T)
+    pub fn bind_in_out<T>(&mut self, binding: u32, label: &str, data: &T)
     where
         T: Pod,
     {
@@ -185,7 +185,7 @@ impl<'gpu> Runner<'gpu> {
             .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    pub fn bind_in_out_slice<T>(&mut self, binding: u32, label: &str, data: &'gpu [T])
+    pub fn bind_in_out_slice<T>(&mut self, binding: u32, label: &str, data: &[T])
     where
         T: Pod,
     {

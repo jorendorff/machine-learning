@@ -119,7 +119,7 @@ impl<'gpu> Runner<'gpu> {
         assert!(self.buffers.insert(binding, buffer).is_none());
     }
 
-    pub fn bind_in<T>(&mut self, binding: u32, label: &str, data: &T)
+    pub fn bind_in_uniform<T>(&mut self, binding: u32, label: &str, data: &T)
     where
         T: bytemuck::NoUninit,
     {
@@ -136,6 +136,23 @@ impl<'gpu> Runner<'gpu> {
             .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
+    pub fn bind_in<T>(&mut self, binding: u32, label: &str, data: &T)
+    where
+        T: bytemuck::NoUninit,
+    {
+        let bytes = bytemuck::bytes_of(data);
+        self.bind(
+            binding,
+            label,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            bytes.len(),
+        );
+
+        self.gpu
+            .queue
+            .write_buffer(&self.buffers[&binding], 0, bytes);
+    }
+
     pub fn bind_in_slice<T>(&mut self, binding: u32, label: &str, data: &[T])
     where
         T: bytemuck::NoUninit,
@@ -144,7 +161,7 @@ impl<'gpu> Runner<'gpu> {
         self.bind(
             binding,
             label,
-            wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             bytes.len(),
         );
 

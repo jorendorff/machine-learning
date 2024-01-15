@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
     let mut runner = Runner::new(&gpu, &module, "mandelbrot");
 
     runner.bind_out(0, "mandelbrot pixels", WIDTH * HEIGHT);
-    runner.bind_in(
+    runner.bind_in_uniform(
         1,
         "viewport bounds",
         &Rectangle {

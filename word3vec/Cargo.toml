@@ -18,4 +18,4 @@ tokio = { version = "1.35", features = ["full"] }
 
 [dependencies.wgpu]
 git = "https://github.com/gfx-rs/wgpu.git"
-rev = "1da093f7d6b5efc4088399bff2856435ce4e1ef3"
+rev = "5fd7d228ad8f5c12f0a29ae953072093b854dc55"

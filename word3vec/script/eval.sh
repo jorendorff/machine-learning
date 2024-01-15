@@ -23,7 +23,7 @@ time target/release/word3vec \
      --sample=1e-4 \
      --threads=1 \
      --bincode \
-     --iter=NEPOCHS \
+     --iter=$NEPOCHS \
      --impl=gpu \
      --dump-epochs
 

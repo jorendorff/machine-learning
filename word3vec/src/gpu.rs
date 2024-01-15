@@ -322,7 +322,10 @@ async fn map_slice<'a>(
     slice.map_async(wgpu::MapMode::Read, move |result| {
         let _ = sender.send(result);
     });
-    assert!(device.poll(wgpu::Maintain::Wait));
+    assert!(matches!(
+        device.poll(wgpu::Maintain::Wait),
+        wgpu::MaintainResult::Ok
+    ));
     receiver.await.unwrap().expect("map failed");
     slice.get_mapped_range()
 }

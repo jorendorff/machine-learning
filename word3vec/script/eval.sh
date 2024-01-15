@@ -11,7 +11,8 @@ fi
 
 cargo build --release
 
-TRAIN=text8
+TRAIN=text6
+NEPOCHS=45
 
 time target/release/word3vec \
      --train "$TRAIN" \
@@ -20,9 +21,10 @@ time target/release/word3vec \
      --window=8 \
      --hs \
      --sample=1e-4 \
-     --threads=20 \
+     --threads=1 \
      --bincode \
-     --iter=15 \
+     --iter=NEPOCHS \
+     --impl=gpu \
      --dump-epochs
 
-./target/release/word3vec-evaluate --train "$TRAIN" --model vectors-15.bincode
+./target/release/word3vec-evaluate --train "$TRAIN" --model vectors-$NEPOCHS.bincode

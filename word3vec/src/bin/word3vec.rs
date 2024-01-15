@@ -1041,7 +1041,11 @@ impl Word3Vec {
 
         let mut tasks: Vec<Task> = vec![];
 
-        assert_eq!(self.training_sentences.len(), 1);
+        assert_eq!(
+            self.training_sentences.len(),
+            1,
+            "--threads is incomptaible with --impl=gpu"
+        );
         let thread_id = 0;
         let window = self.options.window;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
@@ -1171,6 +1175,7 @@ impl Word3Vec {
 
             if self.options.dump_epochs {
                 let output_file = self.output_file_for_epochs(epoch + 1);
+                println!("Writing {}", output_file.display());
                 self.save_output(&output_file)?;
             }
         }

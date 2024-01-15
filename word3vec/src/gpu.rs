@@ -289,7 +289,7 @@ impl<'gpu> Runner<'gpu> {
                         label: Some("copy_out command encoder"),
                     });
 
-            command_encoder.copy_buffer_to_buffer(buf, 0, &readback_buffer, 0, buf.size());
+            command_encoder.copy_buffer_to_buffer(buf, 0, readback_buffer, 0, buf.size());
             command_encoder.finish()
         };
 
@@ -303,7 +303,7 @@ impl<'gpu> Runner<'gpu> {
     {
         let readback_buffer = self.gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("readback buffer"),
-            size: self.buffers[&binding].size().try_into().unwrap(),
+            size: self.buffers[&binding].size(),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });

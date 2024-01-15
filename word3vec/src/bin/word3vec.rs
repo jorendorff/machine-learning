@@ -740,9 +740,7 @@ impl Word3Vec {
                                         self.embeddings[l1 + c].get() * self.weights[l2 + c].get()
                                     })
                                     .sum::<real>();
-                                if f <= -MAX_EXP {
-                                    continue;
-                                } else if f >= MAX_EXP {
+                                if f <= -MAX_EXP || f >= MAX_EXP {
                                     continue;
                                 }
                                 let f = self.sigmoid(f);

@@ -11,8 +11,10 @@ fi
 
 cargo build --release
 
+TRAIN=text8
+
 time target/release/word3vec \
-     --train text8 \
+     --train "$TRAIN" \
      --output vectors.bincode \
      --size=200 \
      --window=8 \
@@ -23,4 +25,4 @@ time target/release/word3vec \
      --iter=15 \
      --dump-epochs
 
-./target/release/word3vec-evaluate --train text8 --model vectors-15.bincode
+./target/release/word3vec-evaluate --train "$TRAIN" --model vectors-15.bincode

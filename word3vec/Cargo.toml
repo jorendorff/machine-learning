@@ -17,6 +17,5 @@ serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.35", features = ["full"] }
 
 [dependencies.wgpu]
-#version = "0.17"
 git = "https://github.com/gfx-rs/wgpu.git"
-branch = "trunk"
+rev = "1da093f7d6b5efc4088399bff2856435ce4e1ef3"

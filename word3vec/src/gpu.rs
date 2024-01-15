@@ -244,7 +244,7 @@ impl<'gpu> Runner<'gpu> {
             .gpu
             .device
             .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("pixel bind group"),
+                label: Some(&format!("bind group for {:?}", self.entry_point)),
                 layout: &bind_group_layout,
                 entries: &entries,
             });

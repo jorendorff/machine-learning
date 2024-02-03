@@ -34,12 +34,15 @@ async fn main() -> anyhow::Result<()> {
         },
     );
 
-    let size = (
-        (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32,
-        (HEIGHT / WORKGROUP_HEIGHT) as u32,
-        1,
-    );
-    runner.run(size).await?;
+    runner
+        .run(|compute_pass| {
+            compute_pass.dispatch_workgroups(
+                (WIDTH / PACK_FACTOR / WORKGROUP_WIDTH) as u32,
+                (HEIGHT / WORKGROUP_HEIGHT) as u32,
+                1,
+            );
+        })
+        .await?;
 
     let mut pixels = vec![0u8; WIDTH * HEIGHT];
     runner.copy_slice_out(0, &mut pixels).await;

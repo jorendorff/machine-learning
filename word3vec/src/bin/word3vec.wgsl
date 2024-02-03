@@ -33,12 +33,18 @@ struct Task {
   given: u32,
   // index in embeddings of the word we should predict
   predicted: u32,
-  // learning rate
-  alpha: f32,
 }
 
 @group(0) @binding(4)
 var<storage, read> tasks: array<Task>;
+
+struct Dispatch {
+  alpha: f32,
+  // index into tasks. number of tasks is implicit in the workgroup size
+  first_task: u32,
+}
+
+var<push_constant> dispatch: Dispatch;
 
 fn sigmoid(x: f32) -> f32 {
   return 1.0 / (1.0 + exp(-x));
@@ -50,7 +56,7 @@ fn sigmoid(x: f32) -> f32 {
 @compute
 @workgroup_size(WORKGROUP_SIZE)
 fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
-  let task = tasks[invocation.x];
+  let task = tasks[dispatch.first_task + invocation.x];
 
   // The given word's embedding.
   let embedding = &embeddings[task.given];
@@ -73,7 +79,7 @@ fn adjust(@builtin(global_invocation_id) invocation: vec3<u32>) {
     }
 
     let prediction = sigmoid(dot);
-    let gradient = (1.0 - decision.direction - prediction) * task.alpha;
+    let gradient = (1.0 - decision.direction - prediction) * dispatch.alpha;
 
     for (var j = 0; j < DIM; j++) {
       adjust[j] += gradient * (*weights)[j];

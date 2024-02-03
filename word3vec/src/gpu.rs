@@ -40,6 +40,7 @@ impl Gpu {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some(label),
+                    required_features: wgpu::Features::PUSH_CONSTANTS,
                     ..wgpu::DeviceDescriptor::default()
                 },
                 None,
@@ -221,18 +222,24 @@ impl<'gpu> Runner<'gpu> {
             .write_buffer(&self.buffers[&binding], 0, bytes);
     }
 
-    pub async fn run(&self, size: (u32, u32, u32)) -> Result<()> {
+    pub async fn run<F>(&self, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut wgpu::ComputePass),
+    {
         self.gpu
             .device
             .push_error_scope(wgpu::ErrorFilter::Validation);
-        self.run_inner(size).await;
+        self.run_inner(f).await;
         if let Some(err) = self.gpu.device.pop_error_scope().await {
             anyhow::bail!("run failed: {err}");
         }
         Ok(())
     }
 
-    async fn run_inner(&self, size: (u32, u32, u32)) {
+    async fn run_inner<F>(&self, f: F)
+    where
+        F: FnOnce(&mut wgpu::ComputePass),
+    {
         let pipeline = self
             .gpu
             .device
@@ -283,7 +290,7 @@ impl<'gpu> Runner<'gpu> {
                 compute_pass.set_pipeline(&pipeline);
                 compute_pass.set_bind_group(0, &bind_group, &[]);
 
-                compute_pass.dispatch_workgroups(size.0, size.1, size.2);
+                f(&mut compute_pass);
             }
             command_encoder.finish()
         };

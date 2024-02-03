@@ -996,7 +996,7 @@ impl Word3Vec {
 
     async fn train_model_gpu(&self, gpu: &Gpu, epoch: usize) -> anyhow::Result<()> {
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("src/bin/learn.wgsl");
+        path.push("src/bin/word3vec.wgsl");
         let source = std::fs::read_to_string(&path)?;
         let module = gpu.load_wgsl_module(Some("word3vec"), &source).await?;
 
@@ -1035,17 +1035,26 @@ impl Word3Vec {
             given: u32,
             // index in embeddings of the word we should predict
             predicted: u32,
-            // learning rate
+        }
+
+        #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Default)]
+        #[repr(C)]
+        struct Dispatch {
             alpha: f32,
+            first_task: u32,
         }
 
         let mut tasks: Vec<Task> = vec![];
+        let mut dispatches: Vec<Dispatch> = vec![];
 
         assert_eq!(self.training_sentences.len(), 1);
         let thread_id = 0;
         let window = self.options.window;
         let mut sen: Vec<usize> = Vec::with_capacity(MAX_SENTENCE_LENGTH);
         let mut rng = Rng((thread_id + epoch * self.options.num_threads) as u64);
+
+        const WORKGROUP_SIZE: usize = 256; // must match the wgsl
+        const TASKS_PER_DISPATCH: usize = WORKGROUP_SIZE * 16;
 
         // Over "sentences" (chunks of 1000 words)
         for (alpha, sentence) in self.training_regimen(thread_id, epoch) {
@@ -1068,17 +1077,18 @@ impl Word3Vec {
                     tasks.push(Task {
                         given: given_word.try_into().unwrap(),
                         predicted: target_word.try_into().unwrap(),
-                        alpha,
                     });
+                    if tasks.len() % TASKS_PER_DISPATCH == 0 {
+                        dispatches.push(Dispatch {
+                            alpha,
+                            first_task: (tasks.len() - TASKS_PER_DISPATCH) as u32,
+                        });
+                    }
                 }
             }
         }
 
-        // Truncate to a round number of workgroups
-        const WORKGROUP_SIZE: usize = 256; // must match the wgsl
-        while tasks.len() % WORKGROUP_SIZE != 0 {
-            tasks.pop();
-        }
+        eprintln!("firing {} dispatches into the gpu", dispatches.len());
 
         let mut runner = Runner::new(gpu, &module, "adjust");
         runner.bind_in_out_slice(0, "embeddings", &embeddings);
@@ -1087,11 +1097,17 @@ impl Word3Vec {
         runner.bind_in_slice(3, "ranges", &ranges);
         runner.bind_in_slice(4, "tasks", &tasks);
         runner
-            .run((
-                tasks.len().div_ceil(WORKGROUP_SIZE).try_into().unwrap(),
-                1,
-                1,
-            ))
+            .run(|compute_pass| {
+                for dispatch in dispatches {
+                    compute_pass.set_push_constants(0, bytemuck::cast_slice(&[dispatch]));
+                    compute_pass.dispatch_workgroups(
+                        // Truncate to a round number of workgroups
+                        TASKS_PER_DISPATCH as u32,
+                        1,
+                        1,
+                    );
+                }
+            })
             .await?;
 
         runner.copy_slice_out(0, &mut embeddings).await;
